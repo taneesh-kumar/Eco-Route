@@ -1,314 +1,84 @@
 # Component Design
 
-This document defines the internal components of the EcoRoute modular monolith backend (FastAPI), their responsibilities, contracts, inputs/outputs, dependencies, and interaction flows.
+This document defines the module specifications, interfaces, inputs/outputs, dependencies, and boundaries within the EcoRoute modular monolith backend.
 
 ---
 
-## 1. Component Group Specifications
+## 1. Component Specifications
 
 ### 1.1 API Layer
 
-#### Job API
-* **Purpose**: REST interface for workload intake, validation, and status inspection.
-* **Responsibilities**:
-  * Accepts workload submissions over HTTP.
-  * Validates request payloads via Pydantic schemas.
-  * Initiates Job creation and passes valid workloads to the scheduling pipeline.
-  * Exposes Job lifecycle status and associated Attempt details to clients.
-* **Inputs**: Workload submission JSON payloads (CPU, memory, base execution time, priority, deadline).
-* **Outputs**: HTTP status codes, serialized `Job` and `JobAttempt` response models.
-* **Dependencies**: Decision Engine, Attempt Manager, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Applying constraint evaluation, calculating $J_r$ scores, executing workloads, or managing database transactions directly.
-
-#### Region API
-* **Purpose**: REST interface exposing logical/simulated region topology and real-time operational status.
-* **Responsibilities**:
-  * Exposes region metadata (provider, region code, coordinates, hardware specs).
-  * Exposes current simulated regional capacity, utilization, and network latency for UI dashboards.
-* **Inputs**: Query parameters (region filters, status flags).
-* **Outputs**: Serialized regional state and telemetry snapshots.
-* **Dependencies**: Region Simulator, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Modifying simulator state directly, calculating scheduling scores, or mutating region availability.
-
-#### Analytics API
-* **Purpose**: REST interface exposing historical scheduling decisions, audit trails, and aggregate carbon efficiency metrics.
-* **Responsibilities**:
-  * Serves carbon savings KPIs, counterfactual comparison summaries, and energy metrics.
-  * Provides paginated access to immutable audit records.
-* **Inputs**: Metric aggregation filters, date ranges, pagination tokens.
-* **Outputs**: Formatted analytics summaries, audit log entries.
-* **Dependencies**: Analytics & Audit Service, Metrics Service, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Calculating real-time scheduling decisions or modifying audit records.
-
-#### Experiment API
-* **Purpose**: REST interface for defining, initiating, and inspecting controlled academic scheduling experiments.
-* **Responsibilities**:
-  * Ingests experiment configuration parameters (seed, scenario type, workload batches, scheduler variants).
-  * Triggers experiment execution runs in the Experiment Engine.
-  * Exposes comparative experiment results and benchmark metrics.
-* **Inputs**: Experiment configuration payloads, experiment IDs.
-* **Outputs**: Experiment run status, comparative result sets (`ExperimentResult`).
-* **Dependencies**: Experiment Engine, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Executing experiment simulation loops or running scheduling algorithms internally.
+| Component | Purpose & Responsibilities | Inputs | Outputs | Dependencies | Non-Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Job API** | Validates inbound workloads via Pydantic; persists initial `PENDING` Job; exposes lifecycle status. | Submission JSON (CPU, RAM, duration, priority, deadline) | HTTP responses, `Job` / `JobAttempt` models | Decision Engine, Attempt Manager, PostgreSQL | Feasibility checks, $J_r$ scoring, direct DB mutations |
+| **Region API** | Exposes simulated region topology, hardware specs, utilization, and network latency for UI. | Filter query parameters | Region telemetry snapshots | Region Simulator, PostgreSQL | Modifying simulator state, calculating scores |
+| **Analytics API** | Serves carbon savings KPIs, counterfactual benchmarks, and paginated audit records. | Date ranges, metric filters | Aggregated analytics, audit logs | Audit Service, Metrics Service, PostgreSQL | Real-time scheduling, mutating audit records |
+| **Experiment API** | Ingests benchmark configs (seeds, scenarios, variants); triggers runs and exposes results. | Experiment configuration JSON | Run status, `ExperimentResult` datasets | Experiment Engine, PostgreSQL | Executing simulation loops, running schedulers |
 
 ---
 
 ### 1.2 Scheduling Domain
 
-#### Decision Engine
-* **Purpose**: Central scheduling intelligence orchestrator coordinating signal gathering, feasibility pruning, scoring, and execute/defer determinations.
-* **Responsibilities**:
-  * Coordinates the end-to-end evaluation pipeline for submitted and re-evaluated workloads.
-  * Orchestrates signal collection across simulators and carbon services.
-  * Delegates feasibility filtering to Constraint Evaluator, energy modeling to Energy Estimator, and scoring to Score Calculator.
-  * Passes ranked regions to the Deferral Manager to issue final `EXECUTE` or `DEFER` decisions.
-* **Inputs**: Valid `Job` descriptor, current environmental and simulation signals.
-* **Outputs**: `SchedulingDecision` record containing winning region ID, ranked candidate list, full normalization/score breakdown, and action directive (`EXECUTE` or `DEFER`).
-* **Dependencies**: Constraint Evaluator, Energy Estimator, Carbon Service, Score Calculator, Region Ranker, Deferral Manager, Region Simulator, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Direct workload execution, raw HTTP carbon API calls, database transaction persistence, carbon value fabrication, or worker retry routing.
-
-#### Constraint Evaluator
-* **Purpose**: First-stage feasibility filter evaluating non-negotiable operational and hardware constraints before scoring.
-* **Responsibilities**:
-  * Validates regional availability flags.
-  * Verifies hardware resource capacity (CPU cores, memory limits, architecture match).
-  * Enforces hard deadline feasibility: ensures $t_{\text{now}} + T_r + L_r \le t_{\text{deadline}}$.
-  * Prunes non-conforming candidate regions from the scoring pool.
-* **Inputs**: Workload compute/deadline specifications, current regional capacity and availability profiles.
-* **Outputs**: Set of viable `Feasible Regions`.
-* **Dependencies**: Region Simulator.
-* **Non-Responsibilities**: Calculating multi-objective scores ($J_r$), evaluating carbon savings, ranking regions, or applying soft preferences.
-
-#### Energy Estimator
-* **Purpose**: Deterministic estimation of workload energy consumption ($E_r$) across candidate regions.
-* **Responsibilities**:
-  * Calculates region-adjusted execution duration:
-    $$T_r = \frac{T_{\text{base}}}{\text{PerformanceFactor}_r}$$
-  * Models power draw scaling as a function of utilization:
-    $$P(U) = P_{\text{idle}} + (P_{\text{peak}} - P_{\text{idle}}) \cdot U$$
-  * Determines differential power increase caused by workload demand:
-    $$\Delta P = P(U_{\text{after}}) - P(U_{\text{before}})$$
-  * Computes total estimated kilowatt-hours:
-    $$E_r = \Delta P \times T_r$$
-* **Inputs**: Workload base execution time ($T_{\text{base}}$), compute demand, regional performance factor, idle power ($P_{\text{idle}}$), peak power ($P_{\text{peak}}$), current utilization ($U_{\text{before}}$).
-* **Outputs**: Estimated energy consumption $E_r$ (kWh) per feasible region.
-* **Dependencies**: Region Simulator.
-* **Non-Responsibilities**: Calculating carbon emissions ($E_r \times CI_r$), selecting regions, or claiming physical wattmeter measurements.
-
-#### Score Calculator
-* **Purpose**: Computes normalized multi-objective placement cost ($J_r$) for all feasible candidate regions.
-* **Responsibilities**:
-  * Normalizes each dimension across the feasible candidate set using min-max normalization: $N(E_r \times CI_r)$, $N(T_r)$, $N(U_r)$, $N(L_r)$.
-  * Computes composite cost $J_r$:
-    $$J_r = w_C \cdot N(E_r \times CI_r) + w_T \cdot N(T_r) + w_U \cdot N(U_r) + w_L \cdot N(L_r)$$
-    where lower $J_r$ is preferred and weights sum to $1.0$ ($w_C + w_T + w_U + w_L = 1.0$).
-  * Retains individual unweighted and weighted sub-scores for auditability and UI explanations.
-* **Inputs**: Feasible candidate regions, estimated energy ($E_r$), carbon intensity ($CI_r$), execution duration ($T_r$), projected utilization ($U_r$), network latency ($L_r$), configurable weights ($w_C, w_T, w_U, w_L$).
-* **Outputs**: Map of region IDs to calculated $J_r$ scores and normalization parameters.
-* **Dependencies**: None (pure calculation domain service).
-* **Non-Responsibilities**: Selecting the final execution region, dispatching jobs, deciding deferral, or executing retries.
-
-#### Region Ranker
-* **Purpose**: Sorts and ranks feasible regions based on computed $J_r$ scores.
-* **Responsibilities**:
-  * Orders candidate regions in ascending order of $J_r$ (minimum cost first).
-  * Produces an ordered candidate ranking preserved for scheduling auditability and fallback routing.
-* **Inputs**: Set of feasible candidate regions paired with their $J_r$ scores.
-* **Outputs**: Ordered list of ranked candidate regions.
-* **Dependencies**: None.
-* **Non-Responsibilities**: Dispatching workloads, modifying scores, or filtering regions.
-
-#### Deferral Manager
-* **Purpose**: Determines whether a workload should execute immediately or transition to `WAITING` based on deadline slack, priority, and carbon forecast opportunities.
-* **Responsibilities**:
-  * Evaluates deadline feasibility slack: $\text{slack} = t_{\text{deadline}} - (t_{\text{now}} + T_r + L_r)$.
-  * Evaluates whether a meaningful, trustworthy lower-carbon window exists within allowable slack time.
-  * Considers workload priority (higher priority workloads minimize deferral).
-  * Emits `EXECUTE` or `DEFER` decision.
-  * Tracks deferred jobs in Redis and triggers re-evaluation upon condition triggers (forecast drop, capacity release, or slack expiration).
-* **Inputs**: Ranked candidate regions, workload deadline, workload priority, current time, carbon forecast signals.
-* **Outputs**: Scheduling action (`EXECUTE` or `DEFER`), deferral wake-up condition/timer.
-* **Dependencies**: Redis (timers/signals), Persistence (PostgreSQL).
-* **Non-Responsibilities**: Static fixed sleep loops, overriding hard deadlines, or executing workloads.
+| Component | Purpose & Responsibilities | Inputs | Outputs | Dependencies | Non-Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Decision Engine** | Central orchestrator coordinating signal collection, constraint pruning, scoring, and execute/defer actions. | Validated `Job`, environmental signals | `SchedulingDecision` (winning region, rankings, action) | Constraint Evaluator, Energy Estimator, Carbon Service, Score Calculator, Region Ranker, Deferral Manager, PostgreSQL | Direct execution, raw HTTP API calls, carbon fabrication, retry routing |
+| **Constraint Evaluator** | First-stage filter enforcing availability, CPU/RAM capacity, and hard deadlines ($t_{\text{now}} + T_r + L_r \le t_{\text{deadline}}$). | Job demand, live Region state | Set of `Feasible Regions` | Region Simulator | Multi-objective scoring, carbon evaluation, soft preferences |
+| **Energy Estimator** | Deterministic power scaling: $T_r = \frac{T_{\text{base}}}{\text{Perf}_r}$, $\Delta P = P(U_{\text{after}}) - P(U_{\text{before}})$, $E_r = \Delta P \times T_r$. | Workload profile, Region power specs ($P_{\text{idle}}, P_{\text{peak}}$), $T_r$ | Predicted $E_r$ (kWh) per feasible region | Region Simulator | Carbon calculations, region selection, physical wattmeter claims |
+| **Score Calculator** | Computes normalized cost $J_r = w_C N(E_r \times CI_r) + w_T N(T_r) + w_U N(U_r) + w_L N(L_r)$ where $\sum w = 1.0$. | Feasible regions, $E_r, CI_r, T_r, U_r, L_r$, weights | Map of Region IDs to $J_r$ scores and sub-factors | Pure domain calculation | Final region selection, dispatching jobs, deciding deferral |
+| **Region Ranker** | Orders candidate regions in ascending order of $J_r$ with deterministic tie-breaking. | Feasible regions + $J_r$ scores | Ordered list of candidate regions | Pure domain calculation | Dispatching workloads, modifying scores |
+| **Deferral Manager** | Evaluates deadline slack and green forecast windows ($J_{\text{future}} < J_{\text{current}} - \epsilon$) to emit `EXECUTE` or `DEFER`. | Ranked regions, deadline, priority, forecast | Action (`EXECUTE` / `DEFER`), wakeup trigger | Redis, PostgreSQL | Static fixed sleep loops, overriding hard deadlines |
 
 ---
 
-### 1.3 Simulation
+### 1.3 Simulation Domain
 
-#### Region Simulator
-* **Purpose**: Models logical cloud regions and their synthetic operational characteristics.
-* **Responsibilities**:
-  * Maintains regional state: CPU/memory capacity, current utilization ($U_r$), availability flags, performance degradation factors, idle/peak power specs, and network latency ($L_r$).
-  * Provides fully deterministic state transitions when supplied with fixed random seeds.
-* **Inputs**: Region definitions, simulation ticks, synthetic workload loads, random seeds.
-* **Outputs**: Regional telemetry snapshots, resource allocation conformations.
-* **Dependencies**: None.
-* **Non-Responsibilities**: Fabricating carbon intensity values, selecting candidate regions, or executing scheduling algorithms.
-
-#### Workload Simulator
-* **Purpose**: Generates and models standardized, repeatable computational workload profiles.
-* **Responsibilities**:
-  * Models CPU demands, memory footprints, base execution durations ($T_{\text{base}}$), workload classifications, priorities, and deadlines.
-* **Inputs**: Synthetic workload distribution configs, random seeds.
-* **Outputs**: Standardized workload specification objects.
-* **Dependencies**: None.
-* **Non-Responsibilities**: Simulating regional hardware state or making placement decisions.
-
-#### Scenario Engine
-* **Purpose**: Generates dynamic, controlled operational conditions for testing and benchmark evaluation.
-* **Responsibilities**:
-  * Simulates environmental perturbations: regional congestion, diurnal traffic swings, network latency spikes, regional node outages, and external API degradation.
-* **Inputs**: Scenario definitions (e.g., "high-volatility grid", "regional network failure"), simulation clock.
-* **Outputs**: Dynamic operational state mutations applied to the Region Simulator.
-* **Dependencies**: Region Simulator.
-* **Non-Responsibilities**: Direct execution of workloads or altering production scheduling decisions outside test harnesses.
+| Component | Purpose & Responsibilities | Inputs | Outputs | Dependencies | Non-Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Region Simulator** | Models dynamic capacity, utilization ($U_r$), availability, power specs, and latency with deterministic seed support. | Region profiles, simulation ticks, seeds | Region telemetry snapshots | None | Carbon intensity integration, placement decisions |
+| **Workload Simulator** | Generates standardized, repeatable workload profiles (CPU, RAM, $T_{\text{base}}$, priority, deadline). | Workload distribution configs, seeds | Workload specification objects | None | Regional hardware state, placement decisions |
+| **Scenario Engine** | Generates controlled environmental perturbations (congestion, grid swings, node failures). | Scenario configs, simulation clock | Operational mutations applied to Simulator | Region Simulator | Direct workload execution, mutating production decisions |
 
 ---
 
-### 1.4 Carbon
+### 1.4 Carbon Domain
 
-#### Carbon Service
-* **Purpose**: Authoritative domain interface for querying, validating, and retrieving regional carbon intensity.
-* **Responsibilities**:
-  * Queries live carbon data via Electricity Maps Client.
-  * Validates observation freshness, timestamp boundaries, and quality flags.
-  * Interacts with Carbon Cache for low-latency retrieval.
-  * Enforces the fallback hierarchy: Live $\to$ Cache $\to$ Conventional Bypass.
-  * Formats responses into normalized carbon observations containing intensity ($g\text{CO}_2\text{eq}/\text{kWh}$), source, observation timestamp, validity window, and data quality status (`LIVE`, `CACHED`, `UNAVAILABLE`).
-* **Inputs**: Region identifier / geographical coordinates.
-* **Outputs**: Normalized `CarbonObservation` object.
-* **Dependencies**: Electricity Maps Client, Carbon Cache, Persistence (PostgreSQL for observation logging).
-* **Non-Responsibilities**: Fabricating carbon values, interpolating missing data without source signals, or calculating $J_r$ scores.
-
-#### Electricity Maps Client
-* **Purpose**: External HTTP client interacting with the Electricity Maps API.
-* **Responsibilities**:
-  * Handles HTTP requests, authentication, response deserialization, timeouts, and rate limiting against Electricity Maps.
-* **Inputs**: Region query parameters, API credentials.
-* **Outputs**: Raw external carbon intensity payloads.
-* **Dependencies**: External Electricity Maps REST API.
-* **Non-Responsibilities**: Caching observations, fallback decision logic, or communicating with scheduling engines directly.
-
-#### Carbon Cache
-* **Purpose**: High-speed in-memory store for validated regional carbon intensity observations.
-* **Responsibilities**:
-  * Caches normalized carbon observations with explicit Time-To-Live (TTL) timestamps in Redis.
-  * Returns active cached observations upon cache hit; rejects expired entries.
-* **Inputs**: Validated `CarbonObservation` objects, cache keys.
-* **Outputs**: Cached `CarbonObservation` (or cache miss).
-* **Dependencies**: Redis.
-* **Non-Responsibilities**: Directly calling external APIs or fabricating replacement observations.
+| Component | Purpose & Responsibilities | Inputs | Outputs | Dependencies | Non-Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Carbon Service** | Authoritative carbon interface; validates observation freshness and enforces fallback hierarchy (Live $\to$ Cache $\to$ Bypass). | Region ID / coordinates | `CarbonObservation` (CI, source, quality flag) | Electricity Maps Client, Carbon Cache, PostgreSQL | Fabricating values, calculating $J_r$ scores |
+| **Electricity Maps Client** | HTTP client handling authentication, rate limiting, and deserialization against Electricity Maps. | Region query parameters | Raw external carbon intensity payload | Electricity Maps API | Caching observations, fallback logic |
+| **Carbon Cache** | In-memory TTL caching of validated observations in Redis. | Validated `CarbonObservation`, TTL | Cached observation (or cache miss) | Redis | Direct API querying, synthesizing data |
 
 ---
 
-### 1.5 Execution & Reliability
+### 1.5 Execution & Reliability Domain
 
-#### Dispatcher
-* **Purpose**: Bridges scheduling decisions to execution attempts.
-* **Responsibilities**:
-  * Converts approved `SchedulingDecision(EXECUTE)` into a concrete `JobAttempt`.
-  * Persists `JobAttempt` in PostgreSQL in `PENDING` state with a unique `attempt_id`.
-  * Locks the selected region for the duration of the attempt.
-  * Enqueues the attempt into the Redis task execution queue.
-* **Inputs**: `SchedulingDecision` with action `EXECUTE`.
-* **Outputs**: Persisted `JobAttempt` entity, Redis queue message.
-* **Dependencies**: Attempt Manager, Persistence (PostgreSQL), Redis.
-* **Non-Responsibilities**: Rerunning region selection, executing simulation code, or handling retries directly.
-
-#### Execution Worker
-* **Purpose**: Consumes and processes individual execution attempts.
-* **Responsibilities**:
-  * Pops dispatch messages from Redis queue.
-  * Requests an atomic attempt claim from the Idempotency / Claim Manager.
-  * Transitions attempt status: `CLAIMED` $\to$ `RUNNING` $\to$ `COMPLETED` (or `FAILED`).
-  * Executes simulated workload processing against the locked target region.
-  * Records execution duration, dynamic energy, and emitted telemetry.
-* **Inputs**: Worker queue dispatch messages (`job_id`, `attempt_id`, `region_id`).
-* **Outputs**: Attempt execution telemetry, completion/failure status updates.
-* **Dependencies**: Idempotency / Claim Manager, Region Simulator, Attempt Manager, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Deciding fallback regions upon failure, creating new attempts, or altering scheduling algorithms.
-
-#### Attempt Manager
-* **Purpose**: Manages lifecycle, state transitions, and persistence of individual `JobAttempt` records.
-* **Responsibilities**:
-  * Maintains the `JobAttempt` state machine (`PENDING` $\to$ `CLAIMED` $\to$ `RUNNING` $\to$ `COMPLETED` / `FAILED`).
-  * Enforces the decoupling between logical `Job` and concrete `JobAttempt`.
-  * Records attempt-specific telemetry (actual runtime, actual energy, error messages).
-* **Inputs**: Attempt creation requests, state transition events.
-* **Outputs**: Persisted and updated `JobAttempt` records.
-* **Dependencies**: Persistence (PostgreSQL).
-* **Non-Responsibilities**: Scheduling decisions or worker task execution.
-
-#### Retry Manager
-* **Purpose**: Orchestrates failure recovery and enforces retry policies for failed workload attempts.
-* **Responsibilities**:
-  * Catches `FAILED` attempt outcomes from Execution Workers.
-  * Verifies remaining retry quotas ($N_{\text{attempts}} < N_{\text{max}}$) and deadline feasibility slack.
-  * If eligible, transitions parent `Job` to `EVALUATING` and requests a completely fresh routing evaluation from the Decision Engine.
-  * If ineligible (quota exhausted or deadline missed), marks parent `Job` as `FAILED`.
-* **Inputs**: Failed `JobAttempt` notifications.
-* **Outputs**: Re-evaluation requests sent to Decision Engine, or terminal `FAILED` job status updates.
-* **Dependencies**: Decision Engine, Attempt Manager, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Automatically reusing previous region assignments without re-evaluation, or executing retry attempts directly.
-
-#### Idempotency / Claim Manager
-* **Purpose**: Guarantees exactly-once execution per attempt and protects against duplicate delivery.
-* **Responsibilities**:
-  * Enforces atomic claims on `(job_id, attempt_id)` pairs.
-  * Coordinates Redis distributed mutex locks (`SET lock:attempt:<id> NX PX 5000`) backed by PostgreSQL conditional updates (`UPDATE job_attempts SET status = 'CLAIMED' WHERE id = :id AND status = 'PENDING'`).
-  * Rejects duplicate worker claims, turning redundant queue messages into safe no-ops.
-* **Inputs**: Worker claim authorization requests.
-* **Outputs**: Claim decision (`APPROVED` or `REJECTED`).
-* **Dependencies**: Redis, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Scheduling logic, payload parsing, or payload dispatch.
+| Component | Purpose & Responsibilities | Inputs | Outputs | Dependencies | Non-Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Dispatcher** | Converts `SchedulingDecision(EXECUTE)` into `JobAttempt(PENDING)`, locks region, enqueues to Redis. | `SchedulingDecision` | `JobAttempt`, Redis queue task | Attempt Manager, PostgreSQL, Redis | Rerunning selection, executing task code |
+| **Execution Worker** | Atomically claims attempts, runs simulation loop, updates state (`CLAIMED` $\to$ `RUNNING` $\to$ `COMPLETED`/`FAILED`). | Redis queue task (`job_id`, `attempt_id`) | Execution telemetry, completion status | Idempotency Manager, Region Simulator, Attempt Manager, PostgreSQL | Selecting fallback regions on failure |
+| **Attempt Manager** | Manages `JobAttempt` state machine and decouples logical `Job` from concrete runs. | Attempt creation/transition requests | Persisted `JobAttempt` records | PostgreSQL | Scheduling decisions, worker task execution |
+| **Retry Manager** | Handles failed attempts, verifies retry policy ($N < N_{\text{max}}$) and slack, triggers fresh routing in Decision Engine. | Failed `JobAttempt` | Fresh scheduling request or terminal `FAILED` | Decision Engine, Attempt Manager, PostgreSQL | Blindly reusing previous region, running attempts |
+| **Idempotency Manager** | Enforces atomic claims via Redis mutex (`SET NX PX`) and PostgreSQL conditional updates (`WHERE status='PENDING'`). | Worker claim requests | Claim decision (`APPROVED` / `REJECTED`) | Redis, PostgreSQL | Scheduling logic, payload parsing |
 
 ---
 
-### 1.6 Analytics & Experiments
+### 1.6 Analytics & Experiments Domain
 
-#### Audit Service
-* **Purpose**: Immutable logging of all scheduling decisions, state changes, and operational events.
-* **Responsibilities**:
-  * Logs structured audit records for: job intake, constraint rejections, normalization values, calculated $J_r$ scores, region selections, deferral actions, carbon fallback quality flags, attempt claims, completions, failures, and retries.
-* **Inputs**: Domain events emitted across the modular monolith.
-* **Outputs**: Persisted immutable `AuditRecord` rows.
-* **Dependencies**: Persistence (PostgreSQL).
-* **Non-Responsibilities**: Modifying domain state or calculating scheduling scores.
-
-#### Metrics Service
-* **Purpose**: Computes aggregate operational, performance, and sustainability metrics from persisted records.
-* **Responsibilities**:
-  * Aggregates total energy consumption (kWh), gross $\text{CO}_2\text{eq}$ emissions, carbon reduction percentages against counterfactual baselines, average latency, and deadline miss rates.
-* **Inputs**: Persisted `Job`, `JobAttempt`, and `SchedulingDecision` datasets.
-* **Outputs**: Structured analytical aggregates and metric time series.
-* **Dependencies**: Persistence (PostgreSQL).
-* **Non-Responsibilities**: Real-time scheduling decisions or modifying raw operational data.
-
-#### Experiment Engine
-* **Purpose**: Executes controlled, repeatable academic benchmarks comparing EcoRoute against baseline scheduling algorithms.
-* **Responsibilities**:
-  * Coordinates benchmark execution across standardized schedulers:
-    1. **EcoRoute Carbon-Aware Scheduler** ($J_r$ optimization)
-    2. **Conventional Operational Scheduler** (Lowest Latency / Capacity First)
-    3. **Random Feasible Scheduler** (Random valid assignment)
-    4. **Carbon-Only Scheduler** (Minimum carbon, ignoring latency/utilization)
-    5. **Performance-Only Scheduler** (Shortest execution duration)
-  * Uses identical workloads, frozen random seeds, and static region configurations across all comparator runs.
-  * Records comparative metrics in `ExperimentResult` entities.
-* **Inputs**: Experiment specifications, workload batches, simulation profiles, seed definitions.
-* **Outputs**: `ExperimentResult` comparative records.
-* **Dependencies**: Decision Engine, Region Simulator, Workload Simulator, Scenario Engine, Persistence (PostgreSQL).
-* **Non-Responsibilities**: Mutating live operational workload data or production database tables outside experiment boundaries.
+| Component | Purpose & Responsibilities | Inputs | Outputs | Dependencies | Non-Responsibilities |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Audit Service** | Immutable ledger logging all intakes, decisions, constraint rejections, claims, completions, and retries. | Domain events | Persisted `AuditRecord` rows | PostgreSQL | Modifying domain state, scoring logic |
+| **Metrics Service** | Aggregates energy, emissions, carbon savings %, SLA compliance, and latency metrics. | Persisted jobs, attempts, decisions | Structured analytical metrics | PostgreSQL | Real-time scheduling, modifying data |
+| **Experiment Engine** | Runs benchmark harnesses across 5 scheduler variants (`CONVENTIONAL`, `RANDOM`, `CARBON_ONLY`, `PERFORMANCE_ONLY`, `ECOROUTE`). | Experiment configs, workloads, seeds | `ExperimentResult` datasets | Decision Engine, Region Simulator, Workload Simulator, Scenario Engine, PostgreSQL | Mutating live production state |
 
 ---
 
-## 2. Component Interaction Architecture
+## 2. Component Interaction & Dependencies
 
 ```mermaid
 flowchart TD
     API[Job / Region / Analytics / Experiment API]
     
-    subgraph SchedulingDomain["Scheduling Domain"]
+    subgraph Scheduling["Scheduling Domain"]
         DE[Decision Engine]
         CE[Constraint Evaluator]
         EE[Energy Estimator]
@@ -317,285 +87,98 @@ flowchart TD
         DM[Deferral Manager]
     end
     
-    subgraph CarbonDomain["Carbon Domain"]
+    subgraph Carbon["Carbon Domain"]
         CS[Carbon Service]
         EMC[Electricity Maps Client]
         CC[Carbon Cache]
     end
     
-    subgraph SimulationDomain["Simulation Domain"]
+    subgraph Simulation["Simulation Domain"]
         RS[Region Simulator]
         WS[Workload Simulator]
         SE[Scenario Engine]
     end
     
-    subgraph ExecutionDomain["Execution & Reliability Domain"]
+    subgraph Execution["Execution & Reliability"]
         DISP[Dispatcher]
         EW[Execution Worker]
         AM[Attempt Manager]
         RM[Retry Manager]
-        ICM[Idempotency / Claim Manager]
+        ICM[Idempotency Manager]
     end
     
-    subgraph AnalyticsDomain["Analytics & Experiments Domain"]
-        AUD[Audit Service]
-        MET[Metrics Service]
-        EXP[Experiment Engine]
-    end
-    
-    subgraph Storage["Persistence & Infrastructure"]
+    subgraph Storage["Data & Infrastructure"]
         PG[(PostgreSQL Database)]
-        REDIS[(Redis Cache / Queues / Locks)]
+        REDIS[(Redis Cache / Locks / Queues)]
     end
 
-    %% API Interactions
     API --> DE
     API --> AM
-    API --> MET
-    API --> EXP
     
-    %% Decision Engine Orchestration
-    DE --> CE
-    DE --> RS
-    DE --> CS
-    DE --> EE
-    DE --> SC
-    DE --> RR
-    DE --> DM
-    
-    %% Carbon Internal
-    CS --> EMC
-    CS --> CC
+    DE --> CE & RS & CS & EE & SC & RR & DM
+    CS --> EMC & CC
     CC <--> REDIS
-    
-    %% Energy & Simulation Internal
     EE <--> RS
     SE --> RS
     
-    %% Deferral & Dispatch
     DM <--> REDIS
-    DM --> DE
     DE --> DISP
-    
-    %% Execution Flow
-    DISP --> AM
-    DISP --> REDIS
+    DISP --> AM & REDIS
     REDIS --> EW
-    EW --> ICM
-    ICM <--> REDIS
-    ICM <--> PG
-    EW --> AM
-    EW --> RS
+    EW --> ICM & AM & RS
+    ICM <--> REDIS & PG
     
-    %% Retry Loop
     EW --> RM
     RM --> DE
     
-    %% Experiments & Analytics
-    EXP --> DE
-    EXP --> RS
-    EXP --> WS
-    EXP --> SE
-    
-    %% Persistence
-    AM <--> PG
-    AUD --> PG
-    MET <--> PG
-    EXP --> PG
+    AM & PG <--> PG
 ```
 
 ---
 
-## 3. Sequence Diagrams
+## 3. Core Interaction Flows
 
-### 3.1 Normal Workload Scheduling
+### 3.1 Normal Scheduling & Execution
+1. **Client $\to$ Job API**: Ingests and validates workload payload; creates `Job(PENDING)` in PostgreSQL.
+2. **Job API $\to$ Decision Engine**: Collects regional telemetry from **Region Simulator** and filters non-viable regions via **Constraint Evaluator**.
+3. **Decision Engine $\to$ Carbon / Energy**: Queries **Carbon Service** for $CI_r$ and **Energy Estimator** for $E_r$.
+4. **Decision Engine $\to$ Scoring & Deferral**: **Score Calculator** computes $J_r$; **Region Ranker** sorts candidates; **Deferral Manager** approves immediate execution.
+5. **Decision Engine $\to$ Dispatcher**: Creates `JobAttempt(PENDING)` in PostgreSQL; locks target region; pushes task to Redis queue.
+6. **Execution Worker $\to$ Idempotency Manager**: Atomically claims attempt via database CAS update; runs simulated workload; records completion.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client
-    participant API as Job API
-    participant DE as Decision Engine
-    participant CE as Constraint Evaluator
-    participant RS as Region Simulator
-    participant CS as Carbon Service
-    participant EE as Energy Estimator
-    participant SC as Score Calculator
-    participant RR as Region Ranker
-    participant DM as Deferral Manager
-    participant DISP as Dispatcher
-    participant AM as Attempt Manager
-    participant EW as Execution Worker
+### 3.2 Carbon Fallback & Fail-Safe Routing
+* If Electricity Maps is live and fresh: Observation is cached in Redis and passed to scheduler (`LIVE`).
+* If Electricity Maps fails and Redis cache is valid: Cached observation is returned (`CACHED`).
+* If both fail: Carbon optimization is bypassed ($w_C = 0$); conventional operational scheduling executes (`UNAVAILABLE`). Carbon values are **never fabricated**.
 
-    Client->>API: POST /api/v1/jobs (workload payload)
-    API->>DE: schedule_job(job_descriptor)
-    
-    DE->>RS: get_regions_state()
-    RS-->>DE: Region state profiles
-    
-    DE->>CE: evaluate_feasibility(job, regions)
-    CE-->>DE: Feasible candidate regions
-    
-    DE->>CS: get_carbon_intensity(feasible_regions)
-    CS-->>DE: Validated CI_r observations
-    
-    DE->>EE: estimate_energy(job, feasible_regions)
-    EE-->>DE: Estimated E_r (kWh)
-    
-    DE->>SC: calculate_scores(feasible_regions, CI_r, E_r, T_r, U_r, L_r)
-    SC-->>DE: Normalized Jr scores
-    
-    DE->>RR: rank_regions(Jr_scores)
-    RR-->>DE: Ordered region ranking
-    
-    DE->>DM: evaluate_deferral(ranking, deadline, priority)
-    DM-->>DE: Action = EXECUTE
-    
-    DE->>DISP: dispatch(job_id, selected_region)
-    DISP->>AM: create_attempt(job_id, selected_region)
-    AM-->>DISP: attempt_01 (status='PENDING')
-    DISP->>EW: enqueue_attempt(attempt_01)
-    EW->>EW: claim_and_execute()
-```
-
----
-
-### 3.2 Carbon Data Fallback Hierarchy
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant DE as Decision Engine
-    participant CS as Carbon Service
-    participant EMC as Electricity Maps Client
-    participant CC as Carbon Cache (Redis)
-
-    DE->>CS: get_carbon_intensity(region_id)
-    CS->>EMC: fetch_live_carbon(region_coords)
-    
-    alt Live Data Trustworthy & Fresh
-        EMC-->>CS: 200 OK (live_ci = 180 gCO2eq/kWh)
-        CS->>CC: store_observation(region_id, 180, TTL=1800s)
-        CS-->>DE: CarbonObservation(CI=180, Quality='LIVE')
-    else Live API Timeout / Error / Invalid
-        EMC-->>CS: Error / Non-200 / Stale
-        CS->>CC: get_cached_observation(region_id)
-        alt Valid Cache Hit
-            CC-->>CS: Cached CarbonObservation(CI=185, valid)
-            CS-->>DE: CarbonObservation(CI=185, Quality='CACHED')
-        else Cache Miss / Expired
-            CC-->>CS: Cache Miss
-            Note over CS: Never fabricate carbon values!
-            CS-->>DE: CarbonObservation(CI=None, Quality='UNAVAILABLE')
-            Note over DE: Zero out wC; perform conventional operational scheduling
-        end
-    end
-```
-
----
-
-### 3.3 Failed Attempt Recovery & Central Re-routing
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant EW as Execution Worker
-    participant AM as Attempt Manager
-    participant RM as Retry Manager
-    participant DE as Decision Engine
-    participant DISP as Dispatcher
-
-    EW->>AM: update_attempt_status(attempt_01, status='FAILED', error='Simulated node timeout')
-    EW->>RM: handle_failure(job_id, attempt_01)
-    
-    RM->>RM: check_retry_policy(attempt_count, max_retries, deadline_slack)
-    
-    alt Retries Remaining & Slack Feasible
-        RM->>DE: request_fresh_scheduling(job_id)
-        Note over DE: Full multi-objective re-evaluation under current dynamic signals
-        DE->>DISP: dispatch(job_id, new_selected_region)
-        DISP->>AM: create_attempt(job_id, new_selected_region)
-        AM-->>DISP: attempt_02 (status='PENDING')
-        DISP->>EW: enqueue_attempt(attempt_02)
-    else Retries Exhausted or Deadline Breached
-        RM->>AM: update_job_status(job_id, status='FAILED')
-    end
-```
-
----
+### 3.3 Failure Recovery & Retry
+* On worker execution error: **Retry Manager** checks remaining retry quota and deadline slack.
+* If eligible: **Retry Manager** invokes **Decision Engine** for a fresh evaluation under current real-time conditions; a new `attempt_id` is created.
+* Previous regions are never blindly reused.
 
 ### 3.4 Duplicate Delivery Prevention (Atomic Claim)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Q as Redis Queue
-    participant W1 as Worker 1
-    participant W2 as Worker 2
-    participant ICM as Idempotency / Claim Manager
-    participant PG as PostgreSQL (job_attempts)
-
-    Q->>W1: Deliver attempt_01
-    Q->>W2: Duplicate Deliver attempt_01 (Race / Redelivery)
-    
-    par Worker 1 claims
-        W1->>ICM: claim_attempt(attempt_01, worker_id='W1')
-        ICM->>PG: UPDATE job_attempts SET status='CLAIMED', claimed_by='W1' WHERE id='attempt_01' AND status='PENDING'
-        PG-->>ICM: 1 row updated (SUCCESS)
-        ICM-->>W1: Claim APPROVED
-        W1->>W1: Execute Attempt 01
-    and Worker 2 claims
-        W2->>ICM: claim_attempt(attempt_01, worker_id='W2')
-        ICM->>PG: UPDATE job_attempts SET status='CLAIMED', claimed_by='W2' WHERE id='attempt_01' AND status='PENDING'
-        PG-->>ICM: 0 rows updated (ALREADY CLAIMED)
-        ICM-->>W2: Claim REJECTED
-        W2->>W2: Log duplicate delivery ignored (No-Op)
-    end
-```
+* Parallel workers attempting to claim the same `attempt_id` compete via conditional update:
+  `UPDATE job_attempts SET status='CLAIMED', claimed_by=:worker WHERE id=:id AND status='PENDING'`
+* Exactly one worker receives `1 row affected` and proceeds; losing workers receive `0 rows` and drop the duplicate task as a no-op.
 
 ---
 
-## 4. Component Dependency Rules
-
-1. **Top-Down API Dependencies**: API components depend strictly on domain and application services; domain components never depend on the API layer.
-2. **Orchestration vs Delegation**: The Decision Engine coordinates the scheduling workflow but delegates specialized calculations (constraints, energy, scores, rankings) to dedicated components.
-3. **No Frontend Coupling**: Scheduling, simulation, and execution components are decoupled from presentation logic and client state.
-4. **Isolated External Providers**: Scheduling components never make direct HTTP calls to external carbon or cloud providers; all external access is encapsulated behind the Carbon Service.
-5. **Independent Simulation**: The Region Simulator models operational characteristics independently of the scheduling algorithms that consume its telemetry.
-6. **Worker Decoupling**: Execution Workers execute assigned attempts and report status; workers never make placement or routing decisions.
-7. **Centralized Re-routing**: Retry operations must return through the Decision Engine for a fresh evaluation; previous region assignments are never blindly reused.
-8. **Durable Source of Truth**: PostgreSQL is the single authoritative system of record for all state, audit, and experiment data.
-9. **Supporting Cache Role**: Redis is supporting infrastructure for transient caching, distributed mutex locking, and task queues; it is not the correctness authority.
-10. **Region Locking**: Once an attempt enters `CLAIMED` / `RUNNING`, its target region is locked for the life of that attempt.
-11. **Zero Fabrication**: No component in the system is permitted to synthesize, interpolate, or fabricate carbon-intensity values.
-
----
-
-## 5. Component Boundary Summary
+## 4. Component Boundary Summary
 
 | Component | Owns | Does Not Own |
 | :--- | :--- | :--- |
-| **Job API** | Workload intake & request validation | Scheduling algorithms & score calculation |
-| **Region API** | Region metadata & state queries | Simulator mutation & region selection |
-| **Analytics API** | Metrics querying & audit log retrieval | Real-time scheduling decisions |
-| **Experiment API** | Experiment definition & run initiation | Experiment loop execution & scheduling logic |
-| **Decision Engine** | Scheduling workflow orchestration | Task execution & persistence transactions |
-| **Constraint Evaluator** | Hard feasibility filtering | Multi-objective scoring & soft preferences |
+| **Job API** | Workload intake & validation | Scheduling algorithms & scoring |
+| **Decision Engine** | Scheduling orchestration | Direct execution & DB transactions |
+| **Constraint Evaluator** | Hard feasibility filtering | Scoring & soft preferences |
 | **Energy Estimator** | Workload energy modeling ($E_r$) | Carbon calculations & region selection |
-| **Score Calculator** | Normalized $J_r$ score computation | Region selection, dispatch & deferral |
-| **Region Ranker** | Sorting feasible regions by $J_r$ | Task dispatch & execution |
-| **Deferral Manager** | Execute vs. Defer decision & wake-ups | Task execution & static sleep loops |
-| **Region Simulator** | Simulated regional state & dynamics | Carbon data & placement decisions |
-| **Workload Simulator** | Standardized workload specifications | Placement decisions & hardware state |
-| **Scenario Engine** | Controlled perturbation generation | Production state & scheduling algorithms |
-| **Carbon Service** | Carbon data querying, validation & fallback | Value fabrication & score calculation |
-| **Electricity Maps Client** | Raw external HTTP API interaction | Data caching & fallback logic |
-| **Carbon Cache** | Redis TTL caching of observations | API fetching & value fabrication |
-| **Dispatcher** | Attempt creation & queue enqueuing | Region selection & code execution |
-| **Execution Worker** | Simulated workload step execution | Retry routing & region selection |
-| **Attempt Manager** | `JobAttempt` lifecycle & state tracking | Scheduling intelligence |
-| **Retry Manager** | Failure recovery & policy verification | Direct task execution & static retries |
-| **Idempotency / Claim Manager** | Atomic attempt claim enforcement | Scheduling & payload handling |
-| **Audit Service** | Immutable event & decision logging | Domain decision logic |
-| **Metrics Service** | Metric aggregation & counterfactuals | Real-time scheduling decisions |
-| **Experiment Engine** | Controlled academic benchmark runs | Production scheduling mutation |
+| **Carbon Service** | Carbon data & fallback hierarchy | Value fabrication & scoring |
+| **Score Calculator** | Normalized $J_r$ score computation | Dispatch, deferral & region selection |
+| **Region Ranker** | Candidate ordering & tie-breaking | Task dispatch & execution |
+| **Deferral Manager** | Execute vs. Defer decisions | Execution & static sleep loops |
+| **Region Simulator** | Simulated regional state | Carbon data & scheduling logic |
+| **Dispatcher** | Attempt creation & dispatch | Region selection & task execution |
+| **Execution Worker** | Simulated task execution | Retry routing & region selection |
+| **Retry Manager** | Failure recovery & retry policy | Direct execution & static retries |
+| **Idempotency Manager** | Atomic attempt claim enforcement | Scheduling & payload handling |
+| **Audit Service** | Immutable event logging | Domain decision logic |
+| **Experiment Engine** | Benchmark scenario execution | Production state mutation |

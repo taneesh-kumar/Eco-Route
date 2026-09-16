@@ -1,6 +1,6 @@
 # EcoRoute Architecture Documentation
 
-Authoritative architecture baseline for **EcoRoute**, a carbon-aware cloud workload scheduler.
+Authoritative architecture and detailed design baseline for **EcoRoute**, a carbon-aware cloud workload scheduler.
 
 > [!NOTE]
 > Execution targets and regions are modeled as logical/simulated entities. Real multi-cloud infrastructure provisioning is outside the project scope.
@@ -12,8 +12,11 @@ Authoritative architecture baseline for **EcoRoute**, a carbon-aware cloud workl
 | Document | Description |
 | :--- | :--- |
 | [System Architecture](system-architecture.md) | High-level topology, modular monolith style, tech stack boundaries, and system diagrams. |
-| [Component Architecture](component-architecture.md) | Specifications, contracts, inputs/outputs, and non-responsibilities for all 15 core internal modules. |
-| [Data Architecture](data-architecture.md) | PostgreSQL relational schema, Redis operational role, and Job/Attempt state machines. |
+| [Component Architecture](component-architecture.md) | High-level module specifications, contracts, and boundaries across the 15 core architectural areas. |
+| [Component Design](component-design.md) | Implementation-oriented specifications for all 24 backend components across API, Scheduling, Simulation, Carbon, Execution, and Analytics. |
+| [Data Architecture](data-architecture.md) | High-level relational schema, Redis operational role, and Job/Attempt state machines. |
+| [Database Design](database-design.md) | Detailed Supabase PostgreSQL schema, indexes, integrity constraints, JSONB schemas, and atomic CAS claim mechanics. |
+| [Scheduling Engine Design](scheduling-engine-design.md) | Detailed scheduling pipeline, mathematical models ($J_r, E_r, C_r$), normalization, zero-fabrication fallback, deferral, and retry re-routing. |
 | [Reliability Architecture](reliability-architecture.md) | Attempt isolation, retry mechanics, atomic claims, carbon fallback hierarchy, and sequence flows. |
 | [Architecture Decisions (ADRs)](architecture-decisions.md) | 13 Architecture Decision Records and Requirements Traceability Matrix (FR1–FR10). |
 
