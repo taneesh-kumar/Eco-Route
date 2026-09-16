@@ -121,3 +121,123 @@ Detailed specifications are maintained in the [`docs/architecture/`](docs/archit
 * **Modeled Energy**: Energy consumption ($E_r$) is estimated via mathematical power models rather than physical wattmeters.
 * **Signal Dependency**: External carbon feeds are consumed when available; system falls back safely when unavailable.
 * **Empirical Benchmarks**: Carbon savings depend on grid volatility, workload deadlines, and baseline comparisons.
+
+---
+
+## 8. Getting Started & Development
+
+### 8.1 Prerequisites
+* **Python**: `3.11+` / `3.13+`
+* **Node.js**: `20.x` or later & `npm`
+* **PostgreSQL**: PostgreSQL 15+ instance (or managed [Supabase](https://supabase.com) project)
+* **Redis**: Redis 7+ instance (local or hosted)
+
+---
+
+### 8.2 Backend Setup (FastAPI)
+
+1. **Create and activate a virtual environment**:
+   ```bash
+   python -m venv .venv
+   
+   # On Windows (PowerShell):
+   .\.venv\Scripts\Activate.ps1
+   
+   # On macOS/Linux:
+   source .venv/bin/activate
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install -r backend/requirements.txt
+   ```
+
+3. **Configure environment variables**:
+   ```bash
+   cp backend/.env.example backend/.env
+   ```
+   *Edit `backend/.env` to configure your PostgreSQL and Redis connections:*
+   ```ini
+   ENVIRONMENT=development
+   LOG_LEVEL=INFO
+   HOST=0.0.0.0
+   PORT=8000
+   
+   # Supabase / PostgreSQL async connection string (asyncpg)
+   DATABASE_URL=postgresql+asyncpg://<username>:<password>@<host>:<port>/<database>
+   
+   # Redis connection URL
+   REDIS_URL=redis://localhost:6379/0
+   
+   # CORS origins
+   CORS_ORIGINS=["http://localhost:3000"]
+   ```
+
+4. **Run unit tests**:
+   ```bash
+   pytest backend/tests
+   ```
+
+5. **Start the development server**:
+   ```bash
+   python -m uvicorn app.main:app --app-dir backend --reload --port 8000
+   ```
+   *API Swagger documentation is accessible at `http://localhost:8000/docs`.*
+
+---
+
+### 8.3 Frontend Setup (Next.js 16)
+
+1. **Install dependencies**:
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+2. **Configure environment variables**:
+   ```bash
+   cp .env.example .env.local
+   ```
+   *Ensure `frontend/.env.local` points to the FastAPI backend:*
+   ```ini
+   NEXT_PUBLIC_API_URL=http://localhost:8000
+   ```
+
+3. **Typecheck & build validation**:
+   ```bash
+   npm run typecheck
+   npm run build
+   ```
+
+4. **Start the Next.js development server**:
+   ```bash
+   npm run dev
+   ```
+   *Access the web application at `http://localhost:3000`.*
+
+---
+
+### 8.4 Health & Connectivity Verification
+
+EcoRoute provides health probe endpoints to verify that the API layer, database, and Redis cache are functioning:
+
+| Endpoint | Method | Purpose | Expected Response |
+| :--- | :--- | :--- | :--- |
+| `/health` or `/api/v1/health` | `GET` | Comprehensive system & component status | `{"status": "healthy", "components": {...}}` |
+| `/health/live` | `GET` | Fast liveness probe | `{"status": "alive"}` |
+| `/health/ready` | `GET` | Readiness probe (fails with 503 if required infra is down) | `{"ready": true, "database": {...}, "redis": {...}}` |
+
+#### Testing Health via cURL:
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+---
+
+### 8.5 Troubleshooting & Common Notes
+
+* **Async SQLAlchemy Connection String**: Ensure your PostgreSQL URL begins with `postgresql+asyncpg://` rather than standard `postgresql://` or `postgres://`.
+* **Missing Infra in Development**: The backend will start cleanly in `development` mode even if PostgreSQL or Redis are not yet configured; the `/api/v1/health` endpoint will report their status as `unconfigured` rather than crashing.
+* **CORS Errors**: If accessing from a custom host or port, ensure the origin is listed in the `CORS_ORIGINS` JSON array in `backend/.env`.
+
+

@@ -1,0 +1,1 @@
+# backend/app/infrastructure package
