@@ -1,26 +1,23 @@
 # Data Architecture
 
-This document defines the persistent data model, state machines, and caching architecture for EcoRoute.
+This document defines the relational data model, state machines, and persistence boundaries for EcoRoute.
 
 ---
 
 ## 1. Storage Tier Separation
 
-EcoRoute strictly separates persistent storage from operational caching and transient synchronization:
-
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        PostgreSQL Database                            │
-│  - Durable Source of Truth                                             │
-│  - ACID Transactions & Foreign Key Integrity                           │
-│  - Stores Jobs, Attempts, Decisions, Regions, Audits, Experiments       │
+│  - Durable Source of Truth (ACID Transactions & Foreign Keys)          │
+│  - Stores: Jobs, Job Attempts, Decisions, Regions, Audits, Experiments │
 └──────────────────────────────────┬─────────────────────────────────────┘
-                                   │ (Sync / State Updates)
+                                   │
 ┌──────────────────────────────────┴─────────────────────────────────────┐
 │                           Redis Cache & Broker                         │
-│  - Short-Lived Carbon Intensity Observations (TTL Caching)             │
-│  - Distributed Locks for Atomic Attempt Claims (SET NX PX)             │
-│  - Transient Deferral Timers & Worker Coordination Queues              │
+│  - Short-Lived Carbon Observations (TTL Caching)                       │
+│  - Distributed Mutex Locks for Atomic Attempt Claims (SET NX PX)       │
+│  - Transient Deferral Signals & Dispatch Queues                        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,7 +47,6 @@ erDiagram
         int current_attempt_count
         int max_retries
         timestamp created_at
-        timestamp updated_at
     }
 
     JOB_ATTEMPTS {
@@ -60,7 +56,6 @@ erDiagram
         uuid region_id FK
         string status
         string claimed_by_worker
-        timestamp dispatched_at
         timestamp started_at
         timestamp completed_at
         float actual_duration
@@ -74,9 +69,6 @@ erDiagram
         string code UK
         string name
         string provider
-        string country
-        float latitude
-        float longitude
         float max_cpu_capacity
         float max_memory_capacity
         float current_utilization
@@ -94,7 +86,6 @@ erDiagram
         string data_quality
         timestamp observation_timestamp
         timestamp valid_until
-        timestamp recorded_at
     }
 
     SCHEDULING_DECISIONS {
@@ -106,8 +97,6 @@ erDiagram
         float cost_score_jr
         jsonb ranked_candidates
         jsonb weights_applied
-        jsonb normalization_factors
-        string carbon_source_used
         timestamp created_at
     }
 
@@ -116,10 +105,7 @@ erDiagram
         string name
         string scenario_type
         int random_seed
-        jsonb configuration
         string status
-        timestamp started_at
-        timestamp completed_at
     }
 
     EXPERIMENT_RESULTS {
@@ -130,7 +116,6 @@ erDiagram
         float total_co2eq_grams
         float avg_latency_ms
         float deadline_miss_rate
-        jsonb summary_metrics
     }
 
     AUDIT_RECORDS {
@@ -149,62 +134,45 @@ erDiagram
 
 ### 3.1 Logical Job State Machine
 
-The `Job` state machine tracks the lifecycle of the computational workload across one or more execution attempts.
-
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING : Submit Workload
+    [*] --> PENDING : Workload Ingested
     PENDING --> EVALUATING : Intake Pickup
     
-    EVALUATING --> WAITING : Decision = DEFER\n(Slack / Carbon opportunity)
-    EVALUATING --> DISPATCHED : Decision = DISPATCH\n(Best Region Selected)
-    EVALUATING --> FAILED : No feasible region &\nDeadline exhausted
+    EVALUATING --> WAITING : Decision = DEFER (Slack Available)
+    EVALUATING --> DISPATCHED : Decision = DISPATCH (Region Selected)
+    EVALUATING --> FAILED : Infeasible / Deadline Breached
     
     WAITING --> EVALUATING : Condition Trigger / Timer Wakeup
-    WAITING --> FAILED : Hard Deadline Exceeded
+    WAITING --> FAILED : Deadline Breached
     
     DISPATCHED --> RUNNING : Worker Claims Attempt
-    DISPATCHED --> FAILED : Dispatch Timeout / Cancel
     
     RUNNING --> COMPLETED : Attempt Succeeded
-    RUNNING --> EVALUATING : Attempt Failed &\nRetries Left (New Attempt)
-    RUNNING --> FAILED : Attempt Failed &\nRetries / Deadline Exhausted
+    RUNNING --> EVALUATING : Attempt Failed (Retries Left)
+    RUNNING --> FAILED : Attempt Failed (Retries Exhausted)
     
     COMPLETED --> [*]
     FAILED --> [*]
 ```
 
-### 3.2 Physical / Simulated Job Attempt State Machine
-
-The `JobAttempt` state machine tracks an isolated execution run within a locked target region.
+### 3.2 Physical / Simulated Attempt State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING : Dispatcher Creates Attempt
-    
+    [*] --> PENDING : Dispatcher Enqueues
     PENDING --> CLAIMED : Worker Atomic Claim Acquired
-    PENDING --> FAILED : Claim Timeout / Expired
-    
     CLAIMED --> RUNNING : Execution Starts (Region Locked)
-    
-    RUNNING --> COMPLETED : Simulation Finishes Successfully
-    RUNNING --> FAILED : Error / Timeout / Region Simulated Failure
-    
+    RUNNING --> COMPLETED : Simulation Succeeded
+    RUNNING --> FAILED : Simulated Node/Timeout Failure
     COMPLETED --> [*]
     FAILED --> [*]
 ```
 
 ---
 
-## 4. State Ownership and Transition Rules
+## 4. State Rules
 
-1. **Job vs. Attempt Isolation**:
-   * A `Job` represents the logical task and durable lifecycle.
-   * A `JobAttempt` represents a single, region-locked execution attempt.
-   * If an attempt fails, the attempt is marked `FAILED` and is never re-opened. The parent `Job` returns to `EVALUATING` so that the Decision Engine can make a brand-new routing determination.
-2. **Atomic State Mutations**:
-   * Transition from `JobAttempt(PENDING)` to `JobAttempt(CLAIMED)` must be strictly guarded by an atomic database CAS update (`WHERE status = 'PENDING'`) backed by a distributed mutex lock in Redis.
-3. **Region Locking**:
-   * Once a `JobAttempt` enters `CLAIMED` / `RUNNING`, the assigned region is locked for that specific attempt. Mid-execution live migrations across simulated regions are explicitly disallowed.
-4. **Terminal States**:
-   * `COMPLETED` and `FAILED` are terminal states for both `Job` and `JobAttempt`.
+1. **Job vs. Attempt Isolation**: A `Job` tracks the full lifecycle across retries. A `JobAttempt` tracks an immutable single run in a locked region. Failed attempts are marked `FAILED` and never modified.
+2. **Atomic Transitions**: `JobAttempt(PENDING)` $\to$ `JobAttempt(CLAIMED)` requires an atomic database CAS update (`WHERE status = 'PENDING'`) backed by a Redis mutex lock (`SET NX PX`).
+3. **Region Locking**: Once an attempt enters `CLAIMED`/`RUNNING`, its target region is locked for the life of that attempt.

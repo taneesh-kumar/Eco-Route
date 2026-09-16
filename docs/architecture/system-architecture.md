@@ -1,42 +1,42 @@
 # System Architecture
 
-## 1. High-Level Architectural Overview
+## 1. Overview
 
-EcoRoute is structured as a two-tier system consisting of a modern, responsive web application frontend and a high-performance modular monolith backend backed by relational storage and in-memory operational coordination.
+EcoRoute is a two-tier system consisting of a Next.js frontend and a FastAPI modular monolith backend backed by PostgreSQL and Redis.
 
 ```mermaid
 flowchart TB
-    subgraph Client["Presentation Tier (Frontend)"]
+    subgraph Client["Presentation Tier"]
         FE["Next.js 16 (TypeScript)\nTailwind CSS + shadcn/ui\nMapLibre GL"]
     end
 
     subgraph BackendApp["Application Tier (Modular Monolith)"]
-        API["FastAPI REST & WebSocket Layer\nPython 3.13+ / Pydantic"]
+        API["FastAPI REST & WS Layer\nPython 3.13+"]
         
-        subgraph CoreEngines["Core Intelligence & Execution"]
-            SCHED["Scheduling & Decision Engine"]
-            SIM["Region & Workload Simulator"]
-            INTEG["External Carbon & Cloud Integrations"]
+        subgraph CoreEngines["Core Modules"]
+            SCHED["Decision Engine"]
+            SIM["Region Simulator"]
+            INTEG["Carbon & Cloud Integrations"]
             DEFER["Deferral Manager"]
-            DISP["Dispatcher & Attempt Coordinator"]
+            DISP["Dispatcher"]
             WORKER["Execution Workers"]
             ENERGY["Energy Estimator"]
-            AUDIT["Analytics & Audit Service"]
+            AUDIT["Analytics & Audit"]
             EXP["Experiment Engine"]
         end
     end
 
-    subgraph DataTier["Data & Infrastructure Tier"]
+    subgraph DataTier["Data Tier"]
         PG[("PostgreSQL\n(Durable Source of Truth)")]
-        REDIS[("Redis\n(Carbon Cache, Operational Locks, Queues)")]
+        REDIS[("Redis\n(Cache, Locks, Queues)")]
     end
 
-    subgraph ExternalServices["External Integration Layer"]
-        EM["Electricity Maps API\n(Live Carbon Intensity)"]
-        CLOUD["Cloud Provider Metadata\n(AWS / Azure / GCP)"]
+    subgraph ExternalServices["External Signals"]
+        EM["Electricity Maps API"]
+        CLOUD["Cloud Metadata (AWS/Azure/GCP)"]
     end
 
-    FE <-- "HTTPS / REST / WS" --> API
+    FE <-- "REST / WS" --> API
     API --> SCHED
     API --> EXP
     API --> AUDIT
@@ -60,79 +60,37 @@ flowchart TB
 
 ## 2. Technology Stack & Boundaries
 
-### 2.1 Frontend
-
-* **Framework**: Next.js 16 (React, TypeScript)
-* **Styling & UI**: Tailwind CSS, shadcn/ui components
-* **Mapping/Geo**: MapLibre GL for carbon and regional geographic visualization
-* **Responsibilities**:
-  * Job submission and interactive parameter entry
-  * Real-time monitoring of job statuses and attempt tracking
-  * Interactive geographic map displaying region capacity, carbon intensity, and workload allocations
-  * Visual scheduling explanations and decision factor breakdowns (carbon vs. latency vs. cost vs. deadline)
-  * System analytics, carbon reduction KPIs, and benchmark experiment execution dashboards
-* **Boundary Rules**:
-  * The frontend is strictly a presentation and interaction layer.
-  * It must **NOT** contain core scheduling or constraint evaluation logic.
-  * It must **NOT** directly connect to PostgreSQL or Redis; all data flows via authenticated backend REST endpoints.
-
-### 2.2 Backend
-
-* **Framework**: FastAPI (Python 3.13+)
-* **Validation & Types**: Pydantic v2
-* **ORM & Database Abstraction**: SQLAlchemy 2.0 (AsyncIO)
-* **Responsibilities**:
-  * Workload intake validation, normalization, and lifecycle management
-  * Scheduling intelligence, hard constraint pruning, and multi-objective scoring ($J_r$)
-  * Workload and regional resource simulation
-  * Live carbon data integration with validation, fallback, and caching
-  * Energy and emission estimation ($E_r$, $\text{CO}_2\text{eq}$)
-  * Condition- and deadline-aware deferral management
-  * Atomic attempt claims, worker execution dispatch, and reliability/retries
-  * Experiment orchestrations and audit trail logging
-
-### 2.3 Data & Caching Tier
-
-* **PostgreSQL (Durable Store of Truth)**:
-  * Persistent storage for all entities: `jobs`, `job_attempts`, `regions`, `carbon_observations`, `scheduling_decisions`, `experiments`, `experiment_results`, and `audit_records`.
-  * Guarantees ACID transactional integrity and historical auditability.
-* **Redis (In-Memory Support Infrastructure)**:
-  * High-speed caching for validated carbon intensity time-series.
-  * Distributed locking mechanisms (`SET NX PX`) for atomic attempt claims and concurrent decision locks.
-  * Lightweight operational queues and pub/sub for worker notifications and deferral wakeups.
-  * *Constraint*: Redis is transient operational infrastructure and must never replace PostgreSQL as the durable system of record.
-
-### 2.4 External Integrations
-
-* **Electricity Maps**: Primary external provider for live and forecasted carbon intensity ($g\text{CO}_2\text{eq}/\text{kWh}$).
-* **Cloud Provider Profiles (AWS, Azure, GCP)**: Region definitions, coordinate locations, baseline power draw specs, and latency reference matrices.
-* *Constraint*: External cloud adapters are metadata sources and simulation baselines only; EcoRoute does not execute real multi-cloud container or VM provisioning.
+| Component | Technology | Responsibilities | Boundary Constraints |
+| :--- | :--- | :--- | :--- |
+| **Frontend** | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, MapLibre GL | Workload submission UI, geographic carbon/region mapping, decision explanations, telemetry dashboards. | Presentation only; no direct access to PostgreSQL/Redis or core scheduling logic. |
+| **Backend** | FastAPI (Python 3.13+), Pydantic v2, SQLAlchemy 2.0 (AsyncIO) | Workload intake, multi-objective scoring ($J_r$), regional simulation, energy estimation, retry routing, experiment execution. | Single backend process owning all state transitions, scheduling intelligence, and audit logging. |
+| **Database** | PostgreSQL | Persistent store for `jobs`, `job_attempts`, `regions`, `carbon_observations`, `scheduling_decisions`, `experiments`, `audits`. | Durable ACID source of truth. |
+| **Cache & Locks** | Redis | Carbon observation TTL cache, distributed locks for atomic attempt claims (`SET NX PX`), task dispatch queues. | Transient operational support only; never replaces PostgreSQL. |
+| **External APIs** | Electricity Maps, AWS/Azure/GCP Metadata | Real grid carbon intensity ($g\text{CO}_2\text{eq}/\text{kWh}$); regional reference metadata. | Execution regions are logical/simulated; no real multi-cloud container/VM provisioning. |
 
 ---
 
-## 3. Modular Monolith Architectural Style
+## 3. Modular Monolith Architecture
 
-EcoRoute is explicitly architected as a **modular monolith** rather than a distributed microservices network.
+EcoRoute is structured as a modular monolith to avoid distributed systems overhead while enforcing strict domain boundaries:
 
 ```text
-backend/
-├── app/
-│   ├── api/                 # REST endpoints & request/response schemas
-│   ├── scheduling/          # Decision Engine, Constraint Evaluator, Scoring
-│   ├── simulation/          # Region Simulator, Workload Model, Degradation
-│   ├── carbon/              # Electricity Maps client, Cache manager, Fallback
-│   ├── energy/              # Energy estimation models (idle + dynamic power)
-│   ├── execution/           # Dispatcher, Workers, Idempotency, Retry Manager
-│   ├── deferral/            # Deferral Manager, Re-evaluation triggers
-│   ├── analytics/           # Audit logging, Metrics aggregation, Reporting
-│   ├── experiments/         # Controlled scenario runner, Benchmark baselines
-│   ├── persistence/         # SQLAlchemy models, repositories, session management
-│   └── infrastructure/      # Redis client, distributed locks, config/settings
+backend/app/
+├── api/                 # REST endpoints & request/response schemas
+├── scheduling/          # Decision Engine, Constraint Evaluator, Scoring
+├── simulation/          # Region Simulator, Workload Model
+├── carbon/              # Electricity Maps client, Cache manager, Fallback
+├── energy/              # Energy estimation models (idle + dynamic power)
+├── execution/           # Dispatcher, Workers, Idempotency, Retry Manager
+├── deferral/            # Deferral Manager, Re-evaluation triggers
+├── analytics/           # Audit logging, Metrics aggregation
+├── experiments/         # Scenario runner, Benchmark baselines
+├── persistence/         # SQLAlchemy models, repositories, sessions
+└── infrastructure/      # Redis client, distributed locks, config
 ```
 
-### Rationale for Modular Monolith Architecture
+### Rationale
 
-1. **Simplicity and Developer Velocity**: Eliminates operational overhead (service meshes, inter-service gRPC serialization, complex distributed transactions, API gateway latency).
-2. **Deterministic Simulation & Single Clock**: Scheduling experiments and reproducible simulations require tight coordination and shared seed management, which is significantly easier and more deterministic within a single runtime.
-3. **Strict Boundary Isolation**: Module boundaries are enforced via clean Python interfaces and domain abstractions, preventing spaghetti dependencies while preserving single-deployment simplicity.
-4. **Future Evolutionary Path**: If specific components (such as dedicated execution worker pools or ingestion pipelines) require independent horizontal scaling in future production deployments, the clean module boundaries allow seamless extraction into microservices without rewriting core logic.
+1. **Simplicity & Velocity**: Eliminates inter-service network serialization, API gateway latency, and distributed transactions.
+2. **Deterministic Experiments**: Shared clock and fixed random seed management are reliable in a single runtime.
+3. **Clean Domain Boundaries**: Python module interfaces prevent coupling and allow future service extraction if needed.

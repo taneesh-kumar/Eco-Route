@@ -1,78 +1,40 @@
 # Architecture Decisions & Requirements Traceability
 
-This document records the official Architecture Decision Records (ADRs) and the Requirements Traceability Matrix for the EcoRoute system.
+This document records the official Architecture Decision Records (ADRs) and Requirements Traceability Matrix for EcoRoute.
 
 ---
 
 ## 1. Architecture Decision Records (ADRs)
 
-### ADR-01: Modular Monolith Architecture
-* **Decision**: Adopt a modular monolith backend (FastAPI application with strict internal domain boundaries) rather than a distributed microservices network.
-* **Rationale**: Eliminates network serialization latency, distributed transaction orchestration, and operational deployment complexity while maintaining strict domain separation and testability. Facilitates deterministic simulations and reproducible academic experiments.
-
-### ADR-02: Backend Ownership of Scheduling Intelligence
-* **Decision**: All scheduling algorithms, constraint evaluations, scoring calculations ($J_r$), and deferral decisions reside exclusively within the FastAPI backend.
-* **Rationale**: Prevents business logic duplication and security vulnerabilities. Guarantees that clients (frontend UI, scripts) act purely as presentation and ingestion agents.
-
-### ADR-03: PostgreSQL as the Durable System of Record
-* **Decision**: PostgreSQL is the single authoritative persistent data store for all entities (`jobs`, `job_attempts`, `regions`, `decisions`, `audits`, `experiments`).
-* **Rationale**: Relational data integrity, ACID transactional guarantees, foreign key enforcement, and durable historical audit logging are mandatory for compliant scheduling verification.
-
-### ADR-04: Redis as Supporting Operational Infrastructure
-* **Decision**: Redis is used strictly for transient caching, distributed mutex locking, and background task queuing.
-* **Rationale**: Redis provides high-throughput in-memory capabilities for short-lived carbon cache entries and atomic claim distributed locks without replacing PostgreSQL as durable storage.
-
-### ADR-05: Strict Separation of Region Simulation from Scheduling
-* **Decision**: The Region Simulator models physical/simulated hardware, capacity, utilization, and synthetic latency independently of the Decision Engine.
-* **Rationale**: Keeps scheduling logic generic and portable. The scheduler evaluates telemetry signals without being coupled to how those signals were generated.
-
-### ADR-06: Decoupling of Carbon Data Integration from Simulated Regional Profiles
-* **Decision**: Carbon integration (Electricity Maps API, fallback logic, and observation caching) is handled by an isolated Carbon Service separate from static region profiles.
-* **Rationale**: Allows carbon sources to fail, refresh, or switch providers independently without altering simulated hardware models or base region capacities.
-
-### ADR-07: Worker Execution Isolation and Decision Separation
-* **Decision**: Execution workers execute assigned attempts; workers must never select or re-route jobs.
-* **Rationale**: Preserves single-source-of-truth routing. When an execution fails, the worker reports the failure and relinquishes control back to the Decision Engine.
-
-### ADR-08: Unique Attempt IDs for Every Execution Run
-* **Decision**: Every retry creates a distinct `JobAttempt` with a new `attempt_id` and incremented `attempt_number`.
-* **Rationale**: Enables comprehensive auditability, accurate per-attempt telemetry tracking, and clean failure forensics without mutating past historical attempt records.
-
-### ADR-09: Region Locking for Running Attempts
-* **Decision**: Once an attempt enters `CLAIMED` / `RUNNING` status, the target region is locked for that specific attempt.
-* **Rationale**: Live cross-region workload migration mid-execution is outside the project scope and introduces high complexity with questionable carbon ROI. If an attempt fails, it terminates and re-evaluates cleanly.
-
-### ADR-10: Condition- and Deadline-Based Dynamic Deferral
-* **Decision**: Deferral is dynamic based on remaining deadline slack, priority, and carbon forecast triggers, rather than an arbitrary static sleep loop.
-* **Rationale**: Eliminates wasted idle delays and prevents deadline misses caused by rigid static waiting periods.
-
-### ADR-11: Zero Fabrication of Carbon Intensity Values
-* **Decision**: EcoRoute must never fabricate, guess, or synthesize carbon-intensity values if external data is missing.
-* **Rationale**: Fabricated carbon metrics corrupt academic baselines and provide false sustainability guarantees. Missing data triggers fallback to cached data or conventional operational scheduling.
-
-### ADR-12: Frontend State Mutation Restriction
-* **Decision**: The Next.js frontend has read-only access to scheduling decisions, telemetry, and system state; it cannot directly mutate database records or trigger raw worker commands.
-* **Rationale**: Enforces API contract integrity, validates user permissions, and ensures all state transitions pass through the validated backend state machine.
-
-### ADR-13: Logical Simulation of Multi-Cloud Providers
-* **Decision**: AWS, Azure, and GCP are modeled as simulated regional targets and metadata baselines; EcoRoute does not provision live third-party cloud infrastructure.
-* **Rationale**: Real multi-cloud VM/container provisioning is explicitly outside the academic scope and introduces cloud cost and authentication overhead without altering scheduling intelligence validity.
+| ADR ID | Title | Decision | Rationale |
+| :--- | :--- | :--- | :--- |
+| **ADR-01** | Modular Monolith Backend | Build a modular FastAPI monolith instead of distributed microservices. | Eliminates network serialization latency and distributed transaction complexity while enabling deterministic simulation experiments. |
+| **ADR-02** | Backend Intelligence Ownership | Centralize all scheduling algorithms, scoring ($J_r$), and deferral logic in FastAPI. | Prevents business logic duplication; ensures clients act strictly as presentation/intake agents. |
+| **ADR-03** | PostgreSQL System of Record | Use PostgreSQL as the authoritative persistent data store. | Relational integrity, ACID transactions, and durable audit logs are mandatory for verifiable scheduling. |
+| **ADR-04** | Redis Supporting Role | Use Redis strictly for transient caching, distributed locks, and queues. | Provides high-throughput in-memory operations without replacing PostgreSQL as durable storage. |
+| **ADR-05** | Simulation / Scheduler Separation | Decouple the Region Simulator from the Decision Engine. | Keeps scheduling logic generic; scheduler evaluates telemetry signals without knowing how they were simulated. |
+| **ADR-06** | Carbon Service Decoupling | Isolate carbon data fetching and caching from static region hardware profiles. | Allows carbon sources to fail, refresh, or switch providers without altering hardware models. |
+| **ADR-07** | Worker Execution Isolation | Workers execute decisions and report outcomes; workers never select or re-route jobs. | Preserves single-source-of-truth routing in the Decision Engine upon failure. |
+| **ADR-08** | Unique Attempt ID per Retry | Every retry creates a distinct `JobAttempt` with a new `attempt_id` and incremented counter. | Enables complete forensic auditability and accurate telemetry without mutating past attempt records. |
+| **ADR-09** | Region-Locked Execution | Running attempts are strictly locked to their assigned target region. | Live cross-region migration introduces high overhead with minimal carbon benefit; failed runs re-evaluate cleanly. |
+| **ADR-10** | Dynamic Condition Deferral | Deferral is dynamic based on deadline slack and carbon forecast triggers, not static sleep loops. | Avoids unnecessary idle delays and prevents deadline breaches caused by rigid static waiting times. |
+| **ADR-11** | Zero Carbon Fabrication | Never synthesize or guess missing carbon intensity values. | Fabricated values compromise research validity. System falls back gracefully to cache or conventional routing. |
+| **ADR-12** | Frontend Mutation Restriction | Frontend has read-only access to decisions/state and cannot bypass backend validation. | Enforces state machine integrity and guarantees all transitions are validated by the backend. |
+| **ADR-13** | Logical Multi-Cloud Simulation | AWS, Azure, and GCP are modeled as simulated regional targets and reference profiles. | Real multi-cloud infrastructure provisioning is outside academic scope; simulation provides full experimental control. |
 
 ---
 
 ## 2. Requirements Traceability Matrix (FR1 – FR10)
 
-This matrix maps each finalized Functional Requirement (FR) directly to its architectural components and implementing modules.
-
-| Requirement ID | Requirement Summary | Architectural Components | Implementation / Verification Module |
+| Requirement ID | Requirement Summary | Architectural Components | Implementing Module(s) |
 | :--- | :--- | :--- | :--- |
-| **FR1** | Workload Intake & Submission Validation | Job Intake, API Layer, PostgreSQL Persistence | `app/api/jobs.py`, `app/persistence/models/job.py` |
-| **FR2** | Multi-Region Simulation & Resource Modeling | Region Simulator, External Cloud Profiles | `app/simulation/region_simulator.py`, `app/simulation/profiles.py` |
-| **FR3** | Energy & Carbon Footprint Estimation | Energy Estimator, Carbon Service, Electricity Maps Client | `app/energy/estimator.py`, `app/carbon/service.py` |
-| **FR4** | Multi-Objective Optimization & Scoring ($J_r$) | Decision Engine, Constraint Evaluator | `app/scheduling/engine.py`, `app/scheduling/constraints.py`, `app/scheduling/scorer.py` |
-| **FR5** | Priority & Hard Deadline Enforcement | Constraint Evaluator, Deferral Manager | `app/scheduling/constraints.py`, `app/deferral/manager.py` |
-| **FR6** | Condition-Based Dynamic Deferral | Deferral Manager, Redis Timers, Decision Engine | `app/deferral/manager.py`, `app/infrastructure/redis.py` |
-| **FR7** | Carbon Fallback & Reliability Hierarchy | Carbon Service, Redis Cache, Decision Engine | `app/carbon/fallback.py`, `app/carbon/cache.py` |
-| **FR8** | Execution Failure Handling & Fresh Re-routing | Retry Manager, Decision Engine | `app/execution/retry_manager.py`, `app/scheduling/engine.py` |
-| **FR9** | Atomic Claiming & Idempotent Multi-Attempt Execution | Idempotency Manager, Dispatcher, Workers, PostgreSQL | `app/execution/idempotency.py`, `app/execution/dispatcher.py`, `app/execution/worker.py` |
-| **FR10** | Scheduling Auditability, Analytics & Controlled Experiments | Analytics & Audit Service, Experiment Engine, PostgreSQL | `app/analytics/audit.py`, `app/experiments/engine.py` |
+| **FR1** | Workload Intake & Validation | Job Intake, API Layer, PostgreSQL | `app/api/jobs.py`, `app/persistence/models/job.py` |
+| **FR2** | Multi-Region Simulation | Region Simulator, Cloud Profiles | `app/simulation/region_simulator.py`, `app/simulation/profiles.py` |
+| **FR3** | Energy & Carbon Estimation | Energy Estimator, Carbon Service | `app/energy/estimator.py`, `app/carbon/service.py` |
+| **FR4** | Multi-Objective Optimization ($J_r$) | Decision Engine, Constraint Evaluator | `app/scheduling/engine.py`, `app/scheduling/scorer.py` |
+| **FR5** | Priority & Hard Deadlines | Constraint Evaluator, Deferral Manager | `app/scheduling/constraints.py`, `app/deferral/manager.py` |
+| **FR6** | Condition-Based Dynamic Deferral | Deferral Manager, Redis Timers | `app/deferral/manager.py`, `app/infrastructure/redis.py` |
+| **FR7** | Carbon Fallback & Reliability | Carbon Service, Redis Cache | `app/carbon/fallback.py`, `app/carbon/cache.py` |
+| **FR8** | Failure Recovery & Fresh Re-routing | Retry Manager, Decision Engine | `app/execution/retry_manager.py`, `app/scheduling/engine.py` |
+| **FR9** | Atomic Claims & Idempotency | Idempotency Manager, Dispatcher, Workers | `app/execution/idempotency.py`, `app/execution/worker.py` |
+| **FR10** | Auditability & Experiments | Analytics & Audit, Experiment Engine | `app/analytics/audit.py`, `app/experiments/engine.py` |
