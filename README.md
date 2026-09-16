@@ -173,12 +173,25 @@ Detailed specifications are maintained in the [`docs/architecture/`](docs/archit
    CORS_ORIGINS=["http://localhost:3000"]
    ```
 
-4. **Run unit tests**:
+4. **Apply database schema migrations**:
    ```bash
-   pytest backend/tests
+   alembic -c backend/alembic.ini upgrade head
+   ```
+   *Inspect migration status:*
+   ```bash
+   alembic -c backend/alembic.ini current
    ```
 
-5. **Start the development server**:
+5. **Run backend test suite**:
+   ```bash
+   # Run all unit, model, persistence, and constraint tests:
+   pytest backend/tests
+   
+   # Run only database persistence integration tests:
+   pytest backend/tests/test_persistence.py backend/tests/test_constraints.py
+   ```
+
+6. **Start the development server**:
    ```bash
    python -m uvicorn app.main:app --app-dir backend --reload --port 8000
    ```
