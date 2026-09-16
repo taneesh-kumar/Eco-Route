@@ -219,7 +219,20 @@ Detailed specifications are maintained in the [`docs/architecture/`](docs/archit
 
 ### 8.4 Health & Connectivity Verification
 
-EcoRoute provides health probe endpoints to verify that the API layer, database, and Redis cache are functioning:
+EcoRoute provides both a standalone CLI script and HTTP probe endpoints to verify that the API layer, PostgreSQL database, and Redis cache are functioning:
+
+#### 1. Standalone CLI Verification Script
+You can directly test PostgreSQL and Redis connectivity at any time from your terminal:
+```bash
+# Windows (PowerShell):
+.\.venv\Scripts\python backend/scripts/check_connectivity.py
+
+# macOS / Linux:
+python backend/scripts/check_connectivity.py
+```
+
+#### 2. HTTP Health Probes
+When FastAPI is running, you can probe system health via REST endpoints:
 
 | Endpoint | Method | Purpose | Expected Response |
 | :--- | :--- | :--- | :--- |
@@ -227,7 +240,7 @@ EcoRoute provides health probe endpoints to verify that the API layer, database,
 | `/health/live` | `GET` | Fast liveness probe | `{"status": "alive"}` |
 | `/health/ready` | `GET` | Readiness probe (fails with 503 if required infra is down) | `{"ready": true, "database": {...}, "redis": {...}}` |
 
-#### Testing Health via cURL:
+##### Testing Health via cURL:
 ```bash
 curl http://localhost:8000/api/v1/health
 ```

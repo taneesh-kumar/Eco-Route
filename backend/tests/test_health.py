@@ -2,6 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch
 
+from app.core.config import Settings
 from app.main import app
 
 
@@ -16,8 +17,10 @@ async def test_liveness_check():
 
 @pytest.mark.asyncio
 async def test_health_check_unconfigured():
-    # When DB and Redis are unconfigured (default in testing)
-    with patch("app.api.v1.health.check_db_connectivity", return_value=(False, "Database URL is not configured")), \
+    # When DB and Redis are unconfigured
+    mock_settings = Settings(_env_file=None, DATABASE_URL=None, REDIS_URL=None)
+    with patch("app.api.v1.health.get_settings", return_value=mock_settings), \
+         patch("app.api.v1.health.check_db_connectivity", return_value=(False, "Database URL is not configured")), \
          patch("app.api.v1.health.check_redis_connectivity", return_value=(False, "Redis URL is not configured")):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -32,7 +35,9 @@ async def test_health_check_unconfigured():
 
 @pytest.mark.asyncio
 async def test_health_check_all_connected():
-    with patch("app.api.v1.health.check_db_connectivity", return_value=(True, "connected")), \
+    mock_settings = Settings(_env_file=None, DATABASE_URL="postgresql+asyncpg://mock/db", REDIS_URL="redis://mock:6379/0")
+    with patch("app.api.v1.health.get_settings", return_value=mock_settings), \
+         patch("app.api.v1.health.check_db_connectivity", return_value=(True, "connected")), \
          patch("app.api.v1.health.check_redis_connectivity", return_value=(True, "connected")):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -46,7 +51,9 @@ async def test_health_check_all_connected():
 
 @pytest.mark.asyncio
 async def test_readiness_check_success():
-    with patch("app.api.v1.health.check_db_connectivity", return_value=(True, "connected")), \
+    mock_settings = Settings(_env_file=None, DATABASE_URL="postgresql+asyncpg://mock/db", REDIS_URL="redis://mock:6379/0")
+    with patch("app.api.v1.health.get_settings", return_value=mock_settings), \
+         patch("app.api.v1.health.check_db_connectivity", return_value=(True, "connected")), \
          patch("app.api.v1.health.check_redis_connectivity", return_value=(True, "connected")):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
