@@ -203,62 +203,73 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-sans">
-                {candidateRankings.map((cand: any) => (
-                  <tr
-                    key={cand.region_id || cand.region_code}
-                    className={`hover:bg-slate-900/40 transition-colors ${
-                      cand.rank === 1 && cand.is_feasible
-                        ? "bg-emerald-950/20 font-semibold"
-                        : !cand.is_feasible
-                        ? "opacity-50"
-                        : ""
-                    }`}
-                  >
-                    <td className="px-4 py-3 font-mono">
-                      {cand.is_feasible ? (
-                        <span
-                          className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-bold ${
-                            cand.rank === 1
-                              ? "bg-emerald-500 text-slate-950"
-                              : "bg-slate-800 text-slate-300"
-                          }`}
-                        >
-                          #{cand.rank}
-                        </span>
-                      ) : (
-                        <span className="text-rose-400 text-xs">Infeasible</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-200">
-                      {cand.region_code}
-                    </td>
-                    <td className="px-4 py-3">
-                      {cand.is_feasible ? (
-                        <span className="text-emerald-400 font-mono text-[11px]">Feasible</span>
-                      ) : (
-                        <span className="text-rose-400 font-mono text-[11px] flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          {cand.rejection_reason || "Constraint Violation"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
-                      {cand.is_feasible && cand.composite_score != null ? Number(cand.composite_score).toFixed(4) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {cand.raw_carbon_gco2 != null ? `${Number(cand.raw_carbon_gco2).toFixed(1)} gCO₂` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {cand.raw_cost_usd != null ? `$${Number(cand.raw_cost_usd).toFixed(4)}` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {cand.raw_latency_ms != null ? `${Number(cand.raw_latency_ms).toFixed(1)} ms` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400 text-[11px]">
-                      {cand.norm_carbon != null ? Number(cand.norm_carbon).toFixed(2) : "—"} / {cand.norm_cost != null ? Number(cand.norm_cost).toFixed(2) : "—"} / {cand.norm_latency != null ? Number(cand.norm_latency).toFixed(2) : "—"}
-                    </td>
-                  </tr>
-                ))}
+                {candidateRankings.map((cand: any) => {
+                  const isFeasible = cand.is_feasible ?? (cand.rank !== undefined && cand.rank > 0 && !cand.rejection_reason && (cand.composite_score != null || cand.cost_score_jr != null));
+                  const compScore = cand.composite_score != null ? Number(cand.composite_score) : (cand.cost_score_jr != null ? Number(cand.cost_score_jr) : null);
+                  const rawCarbon = cand.raw_carbon_gco2 != null ? Number(cand.raw_carbon_gco2) : (cand.emissions_co2eq != null ? Number(cand.emissions_co2eq) : null);
+                  const rawCost = cand.raw_cost_usd != null ? Number(cand.raw_cost_usd) : (cand.energy_kwh != null ? Number(cand.energy_kwh) * 0.12 : null);
+                  const rawLatency = cand.raw_latency_ms != null ? Number(cand.raw_latency_ms) : (cand.network_latency_ms != null ? Number(cand.network_latency_ms) : null);
+                  const normCarbon = cand.norm_carbon != null ? Number(cand.norm_carbon) : (cand.score_breakdown?.norm_carbon != null ? Number(cand.score_breakdown.norm_carbon) : null);
+                  const normCost = cand.norm_cost != null ? Number(cand.norm_cost) : (cand.score_breakdown?.norm_duration != null ? Number(cand.score_breakdown.norm_duration) : null);
+                  const normLatency = cand.norm_latency != null ? Number(cand.norm_latency) : (cand.score_breakdown?.norm_latency != null ? Number(cand.score_breakdown.norm_latency) : null);
+
+                  return (
+                    <tr
+                      key={cand.region_id || cand.region_code}
+                      className={`hover:bg-slate-900/40 transition-colors ${
+                        cand.rank === 1 && isFeasible
+                          ? "bg-emerald-950/20 font-semibold"
+                          : !isFeasible
+                          ? "opacity-50"
+                          : ""
+                      }`}
+                    >
+                      <td className="px-4 py-3 font-mono">
+                        {isFeasible ? (
+                          <span
+                            className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                              cand.rank === 1
+                                ? "bg-emerald-500 text-slate-950"
+                                : "bg-slate-800 text-slate-300"
+                            }`}
+                          >
+                            #{cand.rank}
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 text-xs">Infeasible</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-slate-200">
+                        {cand.region_code}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isFeasible ? (
+                          <span className="text-emerald-400 font-mono text-[11px]">Feasible</span>
+                        ) : (
+                          <span className="text-rose-400 font-mono text-[11px] flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            {cand.rejection_reason || "Constraint Violation"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                        {isFeasible && compScore != null ? compScore.toFixed(4) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-300">
+                        {rawCarbon != null ? `${rawCarbon.toFixed(1)} gCO₂` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-300">
+                        {rawCost != null ? `$${rawCost.toFixed(4)}` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-300">
+                        {rawLatency != null ? `${rawLatency.toFixed(1)} ms` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-400 text-[11px]">
+                        {normCarbon != null ? normCarbon.toFixed(2) : "—"} / {normCost != null ? normCost.toFixed(2) : "—"} / {normLatency != null ? normLatency.toFixed(2) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

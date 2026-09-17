@@ -17,15 +17,30 @@ from app.persistence.repositories.carbon_observation_repository import (
 
 logger = logging.getLogger(__name__)
 
-# Standard cloud region to Electricity Maps zone mappings
+# Standard cloud region and EcoRoute seeded codes to Electricity Maps zone mappings
 DEFAULT_ZONE_MAPPINGS: Dict[str, str] = {
+    # EcoRoute seeded region codes
+    "se-sto": "SE-SE3",       # Sweden Central (Stockholm)
+    "fr-par": "FR",           # France Central (Paris)
+    "de-fra": "DE",           # Germany Central (Frankfurt)
+    "us-east": "US-MIDW-PJM",  # US East (N. Virginia / PJM)
+    "pl-war": "PL",           # Poland Central (Warsaw)
+    "jp-tyo": "JP-TK",        # Asia Pacific (Tokyo)
+    "uk-lon": "GB",           # UK South (London / Great Britain)
+
+    # Standard AWS / Cloud region identifiers
     "us-east-1": "US-MIDW-PJM",
+    "us-east-2": "US-MIDW-PJM",
     "us-west-1": "US-CAL-CISO",
     "us-west-2": "US-NW-PACW",
     "eu-west-1": "IE",
+    "eu-west-2": "GB",
+    "eu-west-3": "FR",
     "eu-central-1": "DE",
+    "eu-north-1": "SE-SE3",
     "ap-northeast-1": "JP-TK",
     "ap-southeast-1": "SG",
+    "ap-south-1": "IN",
 }
 
 

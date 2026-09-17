@@ -12,8 +12,30 @@ from app.core.logging import logger, setup_logging
 from app.db.seed import seed_default_regions
 from app.db.session import close_db_connections, get_db_sessionmaker
 from app.execution.deferral_evaluator import DeferredJobEvaluator
+from app.execution.dispatcher import ExecutionDispatcher
 from app.execution.worker import ExecutionWorker
 from app.infrastructure.redis import close_redis_connections
+
+
+async def run_recovery_loop(dispatcher: ExecutionDispatcher, poll_interval: float = 5.0) -> None:
+    """Interval-controlled background loop calling recover_pending_dispatches."""
+    logger.info("Starting ExecutionDispatcher background recovery loop...")
+    while True:
+        try:
+            sessionmaker = get_db_sessionmaker()
+            if sessionmaker:
+                async with sessionmaker() as session:
+                    recovered = await dispatcher.recover_pending_dispatches(session=session, older_than_seconds=5)
+                    if recovered > 0:
+                        await session.commit()
+                        logger.info(f"Recovery loop re-enqueued {recovered} stale PENDING attempt(s).")
+            await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            logger.info("Recovery loop cancelled.")
+            break
+        except Exception as exc:
+            logger.error(f"Error in execution dispatcher recovery loop: {exc}")
+            await asyncio.sleep(poll_interval)
 
 
 @asynccontextmanager
@@ -31,11 +53,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.error(f"Failed to verify/seed default cloud regions on startup: {exc}")
 
-    # 2. Launch background execution worker and deferral sweep
+    # 2. Launch background execution worker, deferral sweep, and dispatcher recovery loop
     worker = ExecutionWorker(worker_id="backend-worker-01")
     evaluator = DeferredJobEvaluator()
+    dispatcher = ExecutionDispatcher()
+
     worker_task = asyncio.create_task(worker.run_loop(poll_interval=0.5))
     evaluator_task = asyncio.create_task(evaluator.run_deferral_loop(sweep_interval=3.0))
+    recovery_task = asyncio.create_task(run_recovery_loop(dispatcher, poll_interval=5.0))
 
     yield
 
@@ -44,8 +69,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     evaluator.stop()
     worker_task.cancel()
     evaluator_task.cancel()
+    recovery_task.cancel()
     try:
-        await asyncio.gather(worker_task, evaluator_task, return_exceptions=True)
+        await asyncio.gather(worker_task, evaluator_task, recovery_task, return_exceptions=True)
     except Exception:
         pass
 

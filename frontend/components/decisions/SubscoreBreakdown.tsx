@@ -14,7 +14,9 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
     latency_weight: Number(weights?.latency_weight ?? 0.1),
   };
 
-  const feasibleCandidates = (candidates || []).filter((c) => c.is_feasible);
+  const feasibleCandidates = (candidates || []).filter(
+    (c: any) => c.is_feasible ?? (c.rank !== undefined && c.rank > 0 && !c.rejection_reason)
+  );
 
   if (feasibleCandidates.length === 0) {
     return (
@@ -42,11 +44,19 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
       </div>
 
       <div className="space-y-3">
-        {feasibleCandidates.map((cand) => {
+        {feasibleCandidates.map((cand: any) => {
+          const compScore = cand.composite_score != null ? Number(cand.composite_score) : (cand.cost_score_jr != null ? Number(cand.cost_score_jr) : 0);
+          const rawCarbon = cand.raw_carbon_gco2 != null ? Number(cand.raw_carbon_gco2) : (cand.emissions_co2eq != null ? Number(cand.emissions_co2eq) : 0);
+          const rawCost = cand.raw_cost_usd != null ? Number(cand.raw_cost_usd) : (cand.energy_kwh != null ? Number(cand.energy_kwh) * 0.12 : 0);
+          const rawLatency = cand.raw_latency_ms != null ? Number(cand.raw_latency_ms) : (cand.network_latency_ms != null ? Number(cand.network_latency_ms) : 0);
+          const normCarbon = cand.norm_carbon != null ? Number(cand.norm_carbon) : (cand.score_breakdown?.norm_carbon != null ? Number(cand.score_breakdown.norm_carbon) : 0);
+          const normCost = cand.norm_cost != null ? Number(cand.norm_cost) : (cand.score_breakdown?.norm_duration != null ? Number(cand.score_breakdown.norm_duration) : 0);
+          const normLatency = cand.norm_latency != null ? Number(cand.norm_latency) : (cand.score_breakdown?.norm_latency != null ? Number(cand.score_breakdown.norm_latency) : 0);
+
           // Normalize subscores for 100% width stacked bar
-          const carbonPart = Math.max(0, Number(cand.subscore_carbon));
-          const costPart = Math.max(0, Number(cand.subscore_cost));
-          const latencyPart = Math.max(0, Number(cand.subscore_latency));
+          const carbonPart = Math.max(0, Number(cand.subscore_carbon ?? (cand.score_breakdown?.weighted_carbon ?? 0)));
+          const costPart = Math.max(0, Number(cand.subscore_cost ?? (cand.score_breakdown?.weighted_duration ?? 0)));
+          const latencyPart = Math.max(0, Number(cand.subscore_latency ?? (cand.score_breakdown?.weighted_latency ?? 0)));
           const totalSub = carbonPart + costPart + latencyPart || 1;
 
           const carbonPct = (carbonPart / totalSub) * 100;
@@ -55,7 +65,7 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
 
           return (
             <div
-              key={cand.region_id}
+              key={cand.region_id || cand.region_code}
               className={`p-3 rounded-lg border ${
                 cand.rank === 1
                   ? "bg-emerald-950/20 border-emerald-500/30"
@@ -78,7 +88,7 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
                   </span>
                 </div>
                 <span className="font-mono text-xs font-semibold text-emerald-400">
-                  C = {Number(cand.composite_score).toFixed(4)}
+                  C = {compScore.toFixed(4)}
                 </span>
               </div>
 
@@ -104,13 +114,13 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
               {/* Raw vs Normalized metrics breakdown */}
               <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-800/60 text-[11px] font-mono">
                 <div className="text-slate-400">
-                  <span className="text-emerald-400">Carbon:</span> {Number(cand.raw_carbon_gco2).toFixed(1)}g &bull; n:{Number(cand.norm_carbon).toFixed(2)}
+                  <span className="text-emerald-400">Carbon:</span> {rawCarbon.toFixed(1)}g &bull; n:{normCarbon.toFixed(2)}
                 </div>
                 <div className="text-slate-400">
-                  <span className="text-amber-400">Cost:</span> ${Number(cand.raw_cost_usd).toFixed(4)} &bull; n:{Number(cand.norm_cost).toFixed(2)}
+                  <span className="text-amber-400">Cost:</span> ${rawCost.toFixed(4)} &bull; n:{normCost.toFixed(2)}
                 </div>
                 <div className="text-slate-400">
-                  <span className="text-cyan-400">Latency:</span> {Number(cand.raw_latency_ms).toFixed(1)}ms &bull; n:{Number(cand.norm_latency).toFixed(2)}
+                  <span className="text-cyan-400">Latency:</span> {rawLatency.toFixed(1)}ms &bull; n:{normLatency.toFixed(2)}
                 </div>
               </div>
             </div>

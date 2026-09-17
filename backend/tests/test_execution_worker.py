@@ -180,6 +180,9 @@ async def test_worker_process_one_empty_queue():
 
     worker = ExecutionWorker(queue=mock_queue)
     mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = []
+    mock_session.execute = AsyncMock(return_value=mock_res)
 
     assert await worker.process_one(mock_session) is None
 

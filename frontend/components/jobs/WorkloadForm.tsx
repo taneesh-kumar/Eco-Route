@@ -31,7 +31,7 @@ const PRESETS: Record<
     mem: 16,
     dur: 15,
     pri: 5,
-    offset: 45,
+    offset: 300,
     wCarbon: 0.6,
     wCost: 0.3,
     wLatency: 0.1,
@@ -43,7 +43,7 @@ const PRESETS: Record<
     mem: 8,
     dur: 5,
     pri: 9,
-    offset: 10,
+    offset: 120,
     wCarbon: 0.2,
     wCost: 0.2,
     wLatency: 0.6,
@@ -55,7 +55,7 @@ const PRESETS: Record<
     mem: 64,
     dur: 30,
     pri: 4,
-    offset: 60,
+    offset: 600,
     wCarbon: 0.7,
     wCost: 0.2,
     wLatency: 0.1,
@@ -69,7 +69,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
   const [memoryGb, setMemoryGb] = useState(16);
   const [duration, setDuration] = useState(15);
   const [priority, setPriority] = useState(5);
-  const [deadlineOffset, setDeadlineOffset] = useState(45);
+  const [deadlineOffset, setDeadlineOffset] = useState(300);
   const [maxRetries, setMaxRetries] = useState(3);
 
   // Multi-objective weights

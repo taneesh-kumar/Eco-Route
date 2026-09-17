@@ -62,7 +62,16 @@ class ExecutionWorker:
         """
         attempt_id = await self.queue.dequeue(timeout_seconds=timeout_seconds)
         if attempt_id is None:
-            return None
+            # PostgreSQL Direct Polling Fallback: discover unclaimed PENDING attempt
+            attempt_repo = JobAttemptRepository(session)
+            pending_attempts = await attempt_repo.list_pending_stale(older_than_seconds=0, limit=1)
+            if pending_attempts:
+                attempt_id = pending_attempts[0].id
+                logger.info(
+                    f"Worker '{self.worker_id}' discovered unclaimed PENDING attempt '{attempt_id}' via DB fallback."
+                )
+            else:
+                return None
 
         # 1. Atomic Idempotent Claim
         claimed = await self.idempotency_manager.claim_attempt(

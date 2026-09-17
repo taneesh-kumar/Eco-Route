@@ -212,6 +212,25 @@ class DecisionEngine:
             selected_region_id = None
 
         # Stage 11: Construct Domain SchedulingDecision
+        rankings_payload = [c.to_dict() for c in ranked_candidates]
+        for inf in infeasible_log:
+            rankings_payload.append({
+                "rank": len(rankings_payload) + 1,
+                "region_id": inf.get("region_id", ""),
+                "region_code": inf.get("region_code", ""),
+                "region_name": inf.get("region_name", inf.get("region_code", "")),
+                "is_feasible": False,
+                "rejection_reason": inf.get("reason", "Hard constraint violation"),
+                "composite_score": None,
+                "cost_score_jr": None,
+                "raw_carbon_gco2": None,
+                "raw_cost_usd": None,
+                "raw_latency_ms": None,
+                "norm_carbon": None,
+                "norm_cost": None,
+                "norm_latency": None,
+            })
+
         decision = SchedulingDecision(
             job_id=job.id,
             decision_action=deferral_res.action,
@@ -219,7 +238,7 @@ class DecisionEngine:
             carbon_quality_used=winning_candidate.carbon.quality,
             decision_reason=deferral_res.reason,
             score_breakdown=winning_candidate.score_result.score_breakdown,
-            candidate_rankings=[c.to_dict() for c in ranked_candidates],
+            candidate_rankings=rankings_payload,
             applied_weights=winning_candidate.score_result.applied_weights,
             selected_region_id=selected_region_id,
             cost_score_jr=winning_candidate.score_result.cost_score_jr,

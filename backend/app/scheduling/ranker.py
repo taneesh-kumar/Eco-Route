@@ -22,17 +22,37 @@ class RankedCandidate:
 
     def to_dict(self) -> Dict[str, Any]:
         """Serializes candidate for explainability candidate_rankings in JSONB."""
+        sb = self.score_result.score_breakdown or {}
+        norm_c = float(sb["norm_carbon"]) if sb.get("norm_carbon") is not None else None
+        norm_d = float(sb["norm_duration"]) if sb.get("norm_duration") is not None else None
+        norm_l = float(sb["norm_latency"]) if sb.get("norm_latency") is not None else None
+        sub_c = float(sb.get("weighted_carbon", 0.0))
+        sub_d = float(sb.get("weighted_duration", 0.0))
+        sub_l = float(sb.get("weighted_latency", 0.0))
+
         return {
             "rank": self.rank,
             "region_id": str(self.region.id),
             "region_code": self.region.code,
             "region_name": self.region.name,
+            "is_feasible": True,
+            "composite_score": float(self.score_result.cost_score_jr),
             "cost_score_jr": str(self.score_result.cost_score_jr),
             "duration_seconds": str(self.estimate.duration_seconds),
             "energy_kwh": str(self.estimate.energy_kwh),
+            "raw_carbon_gco2": float(self.estimate.emissions_co2eq) if self.estimate.emissions_co2eq is not None else None,
+            "raw_cost_usd": float(self.estimate.energy_kwh * Decimal("0.12")),
+            "raw_latency_ms": float(self.region.network_latency_ms),
+            "norm_carbon": norm_c,
+            "norm_cost": norm_d,
+            "norm_latency": norm_l,
+            "subscore_carbon": sub_c,
+            "subscore_cost": sub_d,
+            "subscore_latency": sub_l,
             "emissions_co2eq": str(self.estimate.emissions_co2eq) if self.estimate.emissions_co2eq is not None else None,
             "carbon_quality": self.carbon.quality.value,
             "carbon_intensity": str(self.carbon.value) if self.carbon.value is not None else None,
+            "carbon_intensity_gco2": float(self.carbon.value) if self.carbon.value is not None else None,
             "current_utilization": str(self.region.current_utilization),
             "network_latency_ms": str(self.region.network_latency_ms),
             "score_breakdown": self.score_result.score_breakdown,
