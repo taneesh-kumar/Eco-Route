@@ -29,6 +29,16 @@ class Settings(BaseSettings):
         description="Redis connection URL (redis://...)",
     )
 
+    # Electricity Maps API
+    ELECTRICITY_MAPS_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Electricity Maps API auth token / API key",
+    )
+    ELECTRICITY_MAPS_API_URL: str = Field(
+        default="https://api.electricitymap.org/v3",
+        description="Electricity Maps API base URL",
+    )
+
     # CORS
     CORS_ORIGINS: List[str] = Field(
         default=["http://localhost:3000"],

@@ -66,6 +66,14 @@ async def run_checks() -> int:
             print(f"  Status:  [FAILED] {redis_msg}")
             exit_code = 1
 
+    # 3. External API Configurations
+    print("\n[Optional] External Carbon Services...")
+    if settings.ELECTRICITY_MAPS_API_KEY:
+        masked_key = settings.ELECTRICITY_MAPS_API_KEY[:4] + "..." + settings.ELECTRICITY_MAPS_API_KEY[-4:] if len(settings.ELECTRICITY_MAPS_API_KEY) > 8 else "***"
+        print(f"  Electricity Maps API: [CONFIGURED] (Key: {masked_key}, URL: {settings.ELECTRICITY_MAPS_API_URL})")
+    else:
+        print("  Electricity Maps API: [UNCONFIGURED] (ELECTRICITY_MAPS_API_KEY is not set in .env)")
+
     print("\n" + "=" * 60)
     if exit_code == 0:
         print("[SUCCESS] All configured infrastructure services are OPERATIONAL.")
