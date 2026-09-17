@@ -41,6 +41,14 @@ def get_db_sessionmaker() -> Optional[async_sessionmaker[AsyncSession]]:
     return _async_sessionmaker
 
 
+async def get_db_session():
+    sessionmaker = get_db_sessionmaker()
+    if sessionmaker is None:
+        raise RuntimeError("Database sessionmaker is not available.")
+    async with sessionmaker() as session:
+        yield session
+
+
 async def check_db_connectivity() -> Tuple[bool, str]:
     """
     Non-destructive connectivity check against PostgreSQL.

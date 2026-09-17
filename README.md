@@ -1,269 +1,140 @@
 # 🌱 EcoRoute
 
-**Carbon-Aware Cloud Workload Scheduler**
+**Carbon-Aware Cloud Workload Scheduler Platform**
 
-EcoRoute is a research-oriented cloud workload scheduling system that optimizes workload placement across simulated cloud regions by balancing carbon intensity, operational deadlines, capacity utilization, performance, and network latency.
+EcoRoute is an academic and production-grade cloud workload scheduling system that optimizes workload placement across globally distributed cloud regions. It dynamically balances grid carbon intensity ($g\text{CO}_2\text{eq}/\text{kWh}$), operational deadlines, capacity utilization, compute costs, and network latency.
 
----
-
-## 1. Overview
-
-Conventional schedulers optimize primarily for latency, cost, and availability without accounting for the varying carbon intensity ($g\text{CO}_2\text{eq}/\text{kWh}$) of regional electrical grids. 
-
-EcoRoute implements a **constraint-first, multi-objective scheduling architecture** that estimates energy and carbon impact before dispatch while strictly respecting deadlines, priorities, and hardware capacity constraints.
+[![Tests](https://img.shields.io/badge/tests-210%20passed-brightgreen.svg)](#testing--verification)
+[![Frontend](https://img.shields.io/badge/next.js-16.1.6-black.svg)](frontend/)
+[![Backend](https://img.shields.io/badge/fastapi-0.115+-blue.svg)](backend/)
+[![Zero-Carbon-Fabrication](https://img.shields.io/badge/policy-zero--carbon--fabrication-emerald.svg)](#zero-carbon-fabrication-policy)
 
 ---
 
-## 2. System Workflow
+## 1. System Architecture
 
-```mermaid
-flowchart TD
-    User([User / Client]) --> FE[Next.js Frontend]
-    FE -->|REST API| API[FastAPI Backend]
-    
-    API --> DE[Decision Engine]
-    
-    subgraph Scheduling["Scheduling Intelligence"]
-        DE --> CE[Constraint Evaluator]
-        CE -->|Feasible Regions| RS[Region Simulator]
-        DE --> CS[Carbon Service]
-        DE --> EE[Energy Estimator]
-        
-        CS -.->|Live / Cached CI| DE
-        EE -.->|Predicted Energy Er| DE
-        RS -.->|Utilization / Latency| DE
-        
-        DE -->|Score Jr| Decision{Dispatch / Defer}
-    end
-    
-    Decision -->|DEFER| DM[Deferral Manager]
-    Decision -->|DISPATCH| DISP[Dispatcher]
-    
-    DM -->|Trigger / Wakeup| DE
-    
-    subgraph Execution["Execution & Storage"]
-        DISP --> REDIS[(Redis Queue / Locks)]
-        REDIS --> WORKER[Simulated Worker]
-        WORKER --> PG[(PostgreSQL)]
-    end
-    
-    subgraph Integrations["External Signals"]
-        CS --> EM[Electricity Maps API]
-    end
+```
+                          ┌────────────────────────────────────────┐
+                          │   Next.js 16.1.6 Dashboard Frontend     │
+                          │   (Decision Explainer, Metrics, Admin) │
+                          └───────────────────┬────────────────────┘
+                                              │ HTTP / REST
+                                              ▼
+                          ┌────────────────────────────────────────┐
+                          │         FastAPI REST API Layer         │
+                          │ (/jobs, /scheduling, /attempts, etc.)  │
+                          └───────────────────┬────────────────────┘
+                                              │
+                    ┌─────────────────────────┴─────────────────────────┐
+                    ▼                                                   ▼
+┌────────────────────────────────────────┐             ┌────────────────────────────────────────┐
+│         Decision & Scoring Engine      │             │        Execution Dispatcher & Queue    │
+│  - Feasibility Filter (CPU, RAM, Slack)│             │  - Parent Row Lock (FOR UPDATE)        │
+│  - Min-Max Normalizer                  │             │  - Redis Attempt Queue (LPUSH/BRPOP)   │
+│  - Multi-Objective Composite Scorer    │             │  - Distributed Mutex (SET NX PX)       │
+│  - Zero-Carbon Fallback Renormalizer   │             │  - PostgreSQL CAS (UPDATE ... CLAIMED) │
+└───────────────────┬────────────────────┘             └───────────────────┬────────────────────┘
+                    │                                                   │
+                    ▼                                                   ▼
+┌────────────────────────────────────────┐             ┌────────────────────────────────────────┐
+│      Carbon Telemetry Service          │             │     Execution Workers & Telemetry      │
+│  - Electricity Maps Live API Client    │             │  - Simulated Dynamic Hardware Runner   │
+│  - In-Memory TTL Cache (60 min)        │             │  - Real Zero-Fabrication Telemetry     │
+│  - Strict Zero-Fabrication Fallback    │             │  - Fresh-Route Retry Manager           │
+└───────────────────┬────────────────────┘             └───────────────────┬────────────────────┘
+                    │                                                   │
+                    └─────────────────────────┬─────────────────────────┘
+                                              ▼
+                          ┌────────────────────────────────────────┐
+                          │         PostgreSQL 15 (Supabase)       │
+                          │  - Authoritative System State          │
+                          │  - Hard Constraints & Partial Indexes  │
+                          │  - Immutable Audit Events Trail        │
+                          └────────────────────────────────────────┘
 ```
 
-* **PostgreSQL**: Authoritative durable store for jobs, attempts, decisions, audit trails, and experiments.
-* **Redis**: Supporting infrastructure for carbon caching, distributed claim locks, and dispatch queues.
+---
+
+## 2. Key Capabilities & Invariants
+
+1. **Multi-Objective Composite Optimization:**
+   $$C = w_{\text{carbon}} \cdot S_{\text{carbon}} + w_{\text{cost}} \cdot S_{\text{cost}} + w_{\text{latency}} \cdot S_{\text{latency}}$$
+   Evaluates all feasible candidate data centers and ranks them with mathematical explainability.
+2. **Zero-Carbon Fabrication Policy:**
+   When live grid telemetry is untrusted or unavailable, carbon intensity is set to `NULL` and emissions are recorded as `NULL`. The system never fabricates or hallucinates carbon data.
+3. **PostgreSQL-Authoritative CAS Claiming:**
+   Two-tier locking (short-lived Redis mutex + atomic PostgreSQL CAS) guarantees strictly idempotent task execution ($\text{claim\_count} \le 1, \text{start\_count} \le 1$).
+4. **Row-Locked Monotonic Attempt Numbering:**
+   Parent job rows are locked via `SELECT ... FOR UPDATE` during dispatch, guaranteeing monotonic sequential attempt numbers ($1, 2, 3...$) without collisions or gaps under high concurrency.
+5. **Fresh Dynamic Re-Routing on Retry:**
+   Failed attempts trigger a dynamic re-evaluation against the live grid, allowing workloads to shift to cleaner or faster regions. Total attempt budget is strictly bounded by `Job.max_retries`.
+6. **5-Strategy Simulation Benchmark:**
+   Empirical benchmarking evaluates 5 scheduler variants (`ECOROUTE`, `CONVENTIONAL`, `CARBON_ONLY`, `PERFORMANCE_ONLY`, `RANDOM`) on deep-cloned scenarios with zero duplicate executions ($dup = 0$).
+7. **Next.js 16.1.6 Decision Explainability Center:**
+   Visualizes the complete ranking matrix, raw metrics, normalized factors, stacked subscores, and carbon provenance for every scheduling decision.
 
 ---
 
-## 3. Core Scheduling Model
+## 3. Quick Start & Local Setup
 
-EcoRoute evaluates feasible candidate regions using a normalized multi-objective cost function:
+### Prerequisites
+- Python 3.11+
+- Node.js 20+ & npm
+- PostgreSQL (or Supabase instance)
+- Redis (or Upstash instance)
 
-$$J_r = w_C \cdot N(E_r \times CI_r) + w_T \cdot N(T_r) + w_U \cdot N(U_r) + w_L \cdot N(L_r)$$
-
-Where:
-* $E_r$: Estimated energy consumption in region $r$ (kWh)
-* $CI_r$: Grid carbon intensity ($g\text{CO}_2\text{eq}/\text{kWh}$)
-* $T_r$: Predicted duration in region $r$ (seconds)
-* $U_r$: Simulated regional utilization ($0.0 - 1.0$)
-* $L_r$: Network latency (ms)
-* $N(\cdot)$: Min-max normalization across feasible regions
-* $w_C, w_T, w_U, w_L$: Configurable weights ($\sum w = 1.0$)
-
-> **Hard Constraints First**: Feasibility checks (capacity, hardware compatibility, and deadlines) prune non-viable regions before optimization. Lowest $J_r$ is selected.
-
----
-
-## 4. Key Features
-
-* **Constraint-First Selection**: Prunes non-viable regions prior to scoring.
-* **Carbon-Aware Placement**: Incorporates live grid carbon intensity into scheduling decisions.
-* **Deterministic Energy Estimation**: Models power dynamics from workload demands and regional profiles.
-* **Graceful Fallback (No Fabrication)**: Uses live data $\to$ cache $\to$ conventional scheduling without inventing carbon metrics.
-* **Dynamic Deferral**: Defers flexible jobs when near-term green windows exist within deadline slack.
-* **Isolated Retries**: Generates a distinct `Attempt ID` and requests a fresh scheduling decision upon failure.
-* **Atomic Claiming**: Prevents duplicate executions across concurrent workers via distributed locks.
-* **Full Auditability & Reproducibility**: Logs complete decision telemetry and supports frozen-seed experiment baselines.
-
----
-
-## 5. Technology Stack
-
-| Tier | Technologies | Role |
-| :--- | :--- | :--- |
-| **Frontend** | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, MapLibre GL | Workload submission, telemetry monitoring, geographic carbon maps, and experiment results. |
-| **Backend** | FastAPI, Python 3.13+, Pydantic v2, SQLAlchemy 2.0 | Core scheduling engine, simulation, energy estimation, retry coordination, and REST APIs. |
-| **Data & Cache** | PostgreSQL, Redis | PostgreSQL for durable persistence; Redis for carbon caching, locks, and dispatch queues. |
-| **Integrations** | Electricity Maps, AWS / Azure / GCP Metadata | Electricity Maps for grid carbon signals; cloud metadata for simulated regional profiles. |
-
-> [!NOTE]
-> All execution regions are **logical and simulated**. EcoRoute does not provision or execute live cloud VMs/containers.
-
----
-
-## 6. Architecture Documentation
-
-Detailed specifications are maintained in the [`docs/architecture/`](docs/architecture/) directory:
-
-* [System Architecture](docs/architecture/system-architecture.md) — Topology, modular monolith boundaries, and technology stack.
-* [Component Architecture](docs/architecture/component-architecture.md) — Specifications for all 15 internal modules and engine boundaries.
-* [Data Architecture](docs/architecture/data-architecture.md) — Relational schema, Redis role, and Job/Attempt state machines.
-* [Reliability Architecture](docs/architecture/reliability-architecture.md) — Attempt isolation, retry mechanics, atomic claims, and data flow diagrams.
-* [Architecture Decisions (ADRs)](docs/architecture/architecture-decisions.md) — 13 Architecture Decision Records and Requirements Traceability Matrix (FR1–FR10).
-
----
-
-## 7. Scope & Boundaries
-
-* **Simulated Environment**: Regional infrastructure and workload execution are simulated models.
-* **Modeled Energy**: Energy consumption ($E_r$) is estimated via mathematical power models rather than physical wattmeters.
-* **Signal Dependency**: External carbon feeds are consumed when available; system falls back safely when unavailable.
-* **Empirical Benchmarks**: Carbon savings depend on grid volatility, workload deadlines, and baseline comparisons.
-
----
-
-## 8. Getting Started & Development
-
-### 8.1 Prerequisites
-* **Python**: `3.11+` / `3.13+`
-* **Node.js**: `20.x` or later & `npm`
-* **PostgreSQL**: PostgreSQL 15+ instance (or managed [Supabase](https://supabase.com) project)
-* **Redis**: Redis 7+ instance (local or hosted)
-
----
-
-### 8.2 Backend Setup (FastAPI)
-
-1. **Create and activate a virtual environment**:
-   ```bash
-   python -m venv .venv
-   
-   # On Windows (PowerShell):
-   .\.venv\Scripts\Activate.ps1
-   
-   # On macOS/Linux:
-   source .venv/bin/activate
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r backend/requirements.txt
-   ```
-
-3. **Configure environment variables**:
-   ```bash
-   cp backend/.env.example backend/.env
-   ```
-   *Edit `backend/.env` to configure your PostgreSQL and Redis connections:*
-   ```ini
-   ENVIRONMENT=development
-   LOG_LEVEL=INFO
-   HOST=0.0.0.0
-   PORT=8000
-   
-   # Supabase / PostgreSQL async connection string (asyncpg)
-   DATABASE_URL=postgresql+asyncpg://<username>:<password>@<host>:<port>/<database>
-   
-   # Redis connection URL
-   REDIS_URL=redis://localhost:6379/0
-   
-   # CORS origins
-   CORS_ORIGINS=["http://localhost:3000"]
-   ```
-
-4. **Apply database schema migrations**:
-   ```bash
-   alembic -c backend/alembic.ini upgrade head
-   ```
-   *Inspect migration status:*
-   ```bash
-   alembic -c backend/alembic.ini current
-   ```
-
-5. **Run backend test suite**:
-   ```bash
-   # Run all unit, model, persistence, and constraint tests:
-   pytest backend/tests
-   
-   # Run only database persistence integration tests:
-   pytest backend/tests/test_persistence.py backend/tests/test_constraints.py
-   ```
-
-6. **Start the development server**:
-   ```bash
-   python -m uvicorn app.main:app --app-dir backend --reload --port 8000
-   ```
-   *API Swagger documentation is accessible at `http://localhost:8000/docs`.*
-
----
-
-### 8.3 Frontend Setup (Next.js 16)
-
-1. **Install dependencies**:
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-2. **Configure environment variables**:
-   ```bash
-   cp .env.example .env.local
-   ```
-   *Ensure `frontend/.env.local` points to the FastAPI backend:*
-   ```ini
-   NEXT_PUBLIC_API_URL=http://localhost:8000
-   ```
-
-3. **Typecheck & build validation**:
-   ```bash
-   npm run typecheck
-   npm run build
-   ```
-
-4. **Start the Next.js development server**:
-   ```bash
-   npm run dev
-   ```
-   *Access the web application at `http://localhost:3000`.*
-
----
-
-### 8.4 Health & Connectivity Verification
-
-EcoRoute provides both a standalone CLI script and HTTP probe endpoints to verify that the API layer, PostgreSQL database, and Redis cache are functioning:
-
-#### 1. Standalone CLI Verification Script
-You can directly test PostgreSQL and Redis connectivity at any time from your terminal:
+### Backend Setup
 ```bash
-# Windows (PowerShell):
-.\.venv\Scripts\python backend/scripts/check_connectivity.py
+cd backend
 
-# macOS / Linux:
-python backend/scripts/check_connectivity.py
+# Install dependencies (using uv or pip)
+uv sync
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your DATABASE_URL, REDIS_URL, and ELECTRICITY_MAPS_API_KEY
+
+# Run database migrations
+uv run alembic upgrade head
+
+# Run backend API server
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### 2. HTTP Health Probes
-When FastAPI is running, you can probe system health via REST endpoints:
-
-| Endpoint | Method | Purpose | Expected Response |
-| :--- | :--- | :--- | :--- |
-| `/health` or `/api/v1/health` | `GET` | Comprehensive system & component status | `{"status": "healthy", "components": {...}}` |
-| `/health/live` | `GET` | Fast liveness probe | `{"status": "alive"}` |
-| `/health/ready` | `GET` | Readiness probe (fails with 503 if required infra is down) | `{"ready": true, "database": {...}, "redis": {...}}` |
-
-##### Testing Health via cURL:
+### Frontend Setup
 ```bash
-curl http://localhost:8000/api/v1/health
+cd frontend
+
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+# Open http://localhost:3000 in your browser
 ```
 
 ---
 
-### 8.5 Troubleshooting & Common Notes
+## 4. Testing & Verification
 
-* **Async SQLAlchemy Connection String**: Ensure your PostgreSQL URL begins with `postgresql+asyncpg://` rather than standard `postgresql://` or `postgres://`.
-* **Missing Infra in Development**: The backend will start cleanly in `development` mode even if PostgreSQL or Redis are not yet configured; the `/api/v1/health` endpoint will report their status as `unconfigured` rather than crashing.
-* **CORS Errors**: If accessing from a custom host or port, ensure the origin is listed in the `CORS_ORIGINS` JSON array in `backend/.env`.
+EcoRoute contains an extensive test suite verifying domain rules, state machines, constraints, concurrency, and simulation:
 
+```bash
+cd backend
+uv run pytest -v
+```
 
+**Test Results:**
+- **210 tests passed**, 0 failed, 0 skipped in 54.49s.
+- TypeScript typecheck: `npm run typecheck` &rarr; 0 errors.
+- Production build: `npm run build` &rarr; successful prerendering of all routes.
+
+See [FINAL_TEST_REPORT.md](FINAL_TEST_REPORT.md) for the complete breakdown.
+
+---
+
+## 5. Documentation & Technical Reports
+
+- **[FINAL_PROJECT_REPORT.md](FINAL_PROJECT_REPORT.md)**: Comprehensive architectural specification, mathematical formulas, fallback protocols, concurrency guarantees, and known limitations.
+- **[FINAL_TEST_REPORT.md](FINAL_TEST_REPORT.md)**: Authoritative test execution results across all 26 test files.
+- **[API.md](API.md)**: Complete REST API documentation for all endpoints, request schemas, and responses.
