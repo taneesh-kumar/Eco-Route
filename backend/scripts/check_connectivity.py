@@ -67,12 +67,29 @@ async def run_checks() -> int:
             exit_code = 1
 
     # 3. External API Configurations
-    print("\n[Optional] External Carbon Services...")
+    print("\n[3/3] Checking External Carbon Services...")
     if settings.ELECTRICITY_MAPS_API_KEY:
         masked_key = settings.ELECTRICITY_MAPS_API_KEY[:4] + "..." + settings.ELECTRICITY_MAPS_API_KEY[-4:] if len(settings.ELECTRICITY_MAPS_API_KEY) > 8 else "***"
-        print(f"  Electricity Maps API: [CONFIGURED] (Key: {masked_key}, URL: {settings.ELECTRICITY_MAPS_API_URL})")
+        print(f"  Key:     [CONFIGURED] ({masked_key})")
+        print(f"  URL:     {settings.ELECTRICITY_MAPS_API_URL}")
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                headers = {"auth-token": settings.ELECTRICITY_MAPS_API_KEY}
+                # Test with zones endpoint (lightweight check of key authentication)
+                resp = await client.get(f"{settings.ELECTRICITY_MAPS_API_URL}/zones", headers=headers)
+                if resp.status_code == 200:
+                    zones_data = resp.json()
+                    zone_count = len(zones_data) if isinstance(zones_data, dict) else len(zones_data)
+                    print(f"  Status:  [OK] Successfully authenticated ({zone_count} zones available)")
+                elif resp.status_code == 401 or resp.status_code == 403:
+                    print(f"  Status:  [FAILED] Authentication error (HTTP {resp.status_code}): Invalid API key")
+                else:
+                    print(f"  Status:  [WARNING] Received HTTP {resp.status_code}: {resp.text[:100]}")
+        except Exception as e:
+            print(f"  Status:  [WARNING] Could not reach Electricity Maps API: {e}")
     else:
-        print("  Electricity Maps API: [UNCONFIGURED] (ELECTRICITY_MAPS_API_KEY is not set in .env)")
+        print("  Status:  [UNCONFIGURED] (ELECTRICITY_MAPS_API_KEY is not set in .env)")
 
     print("\n" + "=" * 60)
     if exit_code == 0:
