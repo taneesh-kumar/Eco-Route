@@ -16,26 +16,43 @@ function DecisionsContent() {
   const [loading, setLoading] = useState(true);
   const [searchJobId, setSearchJobId] = useState(initialJobId || "");
 
+  const fetchFullDecision = async (decisionId: string) => {
+    try {
+      setLoading(true);
+      const full = await apiClient.getDecision(decisionId);
+      setSelectedDecision(full);
+    } catch (err) {
+      console.error("Failed to load full decision details:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadRecentDecisions = async () => {
     try {
       const decisions = await apiClient.getRecentDecisions(20);
       setRecentDecisions(decisions);
 
+      let targetId: string | null = null;
       if (initialJobId) {
         const found = decisions.find((d) => d.job_id === initialJobId);
         if (found) {
-          setSelectedDecision(found);
+          targetId = found.id;
         } else {
-          // Attempt fetching directly for job
           const jobDecisions = await apiClient.getJobDecisions(initialJobId);
           if (jobDecisions.length > 0) {
-            setSelectedDecision(jobDecisions[0]);
+            targetId = jobDecisions[0].id;
           } else if (decisions.length > 0) {
-            setSelectedDecision(decisions[0]);
+            targetId = decisions[0].id;
           }
         }
       } else if (decisions.length > 0) {
-        setSelectedDecision(decisions[0]);
+        targetId = decisions[0].id;
+      }
+
+      if (targetId) {
+        const full = await apiClient.getDecision(targetId);
+        setSelectedDecision(full);
       }
     } catch (err) {
       console.error("Failed to load scheduling decisions:", err);
@@ -55,7 +72,8 @@ function DecisionsContent() {
       setLoading(true);
       const results = await apiClient.getJobDecisions(searchJobId.trim());
       if (results.length > 0) {
-        setSelectedDecision(results[0]);
+        const full = await apiClient.getDecision(results[0].id);
+        setSelectedDecision(full);
       }
     } catch (err) {
       console.error("No decision found for job:", err);
@@ -111,7 +129,7 @@ function DecisionsContent() {
           {recentDecisions.slice(0, 6).map((d) => (
             <button
               key={d.id}
-              onClick={() => setSelectedDecision(d)}
+              onClick={() => fetchFullDecision(d.id)}
               className={`px-2.5 py-1 rounded-lg text-xs font-mono transition shrink-0 cursor-pointer ${
                 selectedDecision?.id === d.id
                   ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-semibold"

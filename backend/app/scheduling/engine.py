@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.carbon.service import CarbonService
 from app.domain.carbon import CarbonIntensity, CarbonQuality, CarbonSource
 from app.domain.decision import SchedulingDecision
-from app.domain.exceptions import DomainError
+from app.domain.exceptions import DomainError, SchedulingEngineError, UnschedulableWorkloadError
 from app.domain.job import Job
 from app.domain.region import Region
 from app.domain.values import DeadlineSlack
@@ -26,16 +26,6 @@ from app.scheduling.normalizer import Normalizer
 from app.scheduling.strategies import get_scheduler_strategy
 
 logger = logging.getLogger(__name__)
-
-
-class SchedulingEngineError(DomainError):
-    """Base exception for Scheduling Engine operational errors."""
-    pass
-
-
-class UnschedulableWorkloadError(SchedulingEngineError):
-    """Raised when zero feasible regions exist and deadline slack is exhausted."""
-    pass
 
 
 class DecisionEngine:

@@ -60,3 +60,13 @@ class ZeroCarbonFabricationError(DomainError):
 class RetryBudgetExhaustedError(DomainError):
     """Raised when a retry is attempted after exhausting the maximum allowed retries."""
     pass
+
+
+class SchedulingEngineError(DomainError):
+    """Base exception for Scheduling Engine operational errors."""
+    pass
+
+
+class UnschedulableWorkloadError(SchedulingEngineError):
+    """Raised when zero feasible regions exist and deadline slack is exhausted."""
+    pass

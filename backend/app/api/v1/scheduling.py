@@ -186,7 +186,31 @@ async def evaluate_single_job(
     )
 
     engine = DecisionEngine()
-    decision = await engine.schedule(job=domain_job, current_time=now, session=session)
+    from app.domain.exceptions import UnschedulableWorkloadError
+    try:
+        decision = await engine.schedule(job=domain_job, current_time=now, session=session)
+    except UnschedulableWorkloadError as exc:
+        db_job.status = JobStatus.FAILED.value
+        db_job.updated_at = now
+        await session.flush()
+        return DecisionExplainabilityResponse(
+            id=uuid.uuid4(),
+            job_id=db_job.id,
+            attempt_id=None,
+            selected_region_id=None,
+            decision_action=DecisionAction.REJECT.value,
+            cost_score_jr=None,
+            estimated_energy_kwh=None,
+            estimated_co2eq_grams=None,
+            carbon_source_used="ELECTRICITY_MAPS",
+            carbon_quality_used="UNAVAILABLE",
+            decision_reason=str(exc),
+            score_breakdown={"rejection_reason": str(exc)},
+            candidate_rankings=[],
+            applied_weights={},
+            normalization_factors={},
+            created_at=now,
+        )
 
     if decision.decision_action == DecisionAction.EXECUTE:
         dispatcher = ExecutionDispatcher()

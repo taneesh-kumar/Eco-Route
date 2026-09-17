@@ -3,12 +3,18 @@
 import { CandidateRanking, SchedulingWeights } from "@/lib/types";
 
 interface SubscoreBreakdownProps {
-  candidates: CandidateRanking[];
-  weights: SchedulingWeights;
+  candidates?: CandidateRanking[];
+  weights?: SchedulingWeights | null;
 }
 
-export function SubscoreBreakdown({ candidates, weights }: SubscoreBreakdownProps) {
-  const feasibleCandidates = candidates.filter((c) => c.is_feasible);
+export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdownProps) {
+  const safeWeights = {
+    carbon_weight: Number(weights?.carbon_weight ?? 0.6),
+    cost_weight: Number(weights?.cost_weight ?? 0.3),
+    latency_weight: Number(weights?.latency_weight ?? 0.1),
+  };
+
+  const feasibleCandidates = (candidates || []).filter((c) => c.is_feasible);
 
   if (feasibleCandidates.length === 0) {
     return (
@@ -24,13 +30,13 @@ export function SubscoreBreakdown({ candidates, weights }: SubscoreBreakdownProp
         <span>Subscore Contributions to Composite Score C</span>
         <div className="flex items-center gap-3 font-mono text-[11px]">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded bg-emerald-500" /> Carbon (w: {Number(weights.carbon_weight).toFixed(2)})
+            <span className="w-2 h-2 rounded bg-emerald-500" /> Carbon (w: {safeWeights.carbon_weight.toFixed(2)})
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded bg-amber-500" /> Cost (w: {Number(weights.cost_weight).toFixed(2)})
+            <span className="w-2 h-2 rounded bg-amber-500" /> Cost (w: {safeWeights.cost_weight.toFixed(2)})
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded bg-cyan-500" /> Latency (w: {Number(weights.latency_weight).toFixed(2)})
+            <span className="w-2 h-2 rounded bg-cyan-500" /> Latency (w: {safeWeights.latency_weight.toFixed(2)})
           </span>
         </div>
       </div>

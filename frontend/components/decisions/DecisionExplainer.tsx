@@ -42,8 +42,19 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
     );
   }
 
+  const dAny = decision as any;
+  const action = decision.action || dAny.decision_action || "SCHEDULE";
+  const rationale = decision.rationale || dAny.decision_reason || "Algorithmic decision rationale recorded by the scheduling engine.";
+  const candidateRankings = decision.candidate_rankings || [];
+  const safeWeights = decision.weights || {
+    carbon_weight: Number(dAny.applied_weights?.carbon ?? 0.6),
+    cost_weight: Number(dAny.applied_weights?.cost ?? dAny.applied_weights?.time ?? 0.3),
+    latency_weight: Number(dAny.applied_weights?.latency ?? 0.1),
+  };
+  const selectedRegionCode = decision.selected_region_code || dAny.selected_region_code || (candidateRankings.find((c: any) => c.region_id === decision.selected_region_id)?.region_code);
+
   const getActionStyles = () => {
-    switch (decision.action) {
+    switch (action) {
       case "SCHEDULE":
         return {
           bg: "bg-emerald-500/10",
@@ -74,7 +85,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
           border: "border-slate-700",
           text: "text-slate-300",
           icon: HelpCircle,
-          title: decision.action,
+          title: action,
         };
     }
   };
@@ -93,7 +104,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
             </span>
             <span className="text-xs text-slate-400">&bull;</span>
             <span className="text-xs text-slate-400 font-mono">
-              Job: {decision.job_id.substring(0, 8)}...
+              Job: {decision.job_id ? decision.job_id.substring(0, 8) + "..." : "N/A"}
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -104,11 +115,11 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
               <span>{actionStyle.title}</span>
             </div>
 
-            {decision.selected_region_code && (
+            {selectedRegionCode && (
               <div className="text-sm font-semibold text-slate-200">
                 Target Region:{" "}
                 <span className="font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                  {decision.selected_region_code}
+                  {selectedRegionCode}
                 </span>
               </div>
             )}
@@ -119,13 +130,13 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
         <div className="flex flex-col md:items-end gap-1.5">
           <CarbonBadge
             intensity={decision.carbon_intensity_gco2}
-            quality={decision.carbon_quality}
-            source={decision.carbon_source}
+            quality={decision.carbon_quality || dAny.carbon_quality_used}
+            source={decision.carbon_source || dAny.carbon_source_used}
             showSource
           />
           <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
             <Calendar className="w-3 h-3 text-slate-400" />
-            {new Date(decision.created_at).toLocaleString()}
+            {decision.created_at ? new Date(decision.created_at).toLocaleString() : "Recently"}
           </span>
         </div>
       </div>
@@ -136,7 +147,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
           Algorithmic Decision Rationale
         </h4>
         <p className="text-sm text-slate-200 leading-relaxed font-sans">
-          {decision.rationale}
+          {rationale}
         </p>
       </div>
 
@@ -150,21 +161,21 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
         </div>
         <div className="flex items-center gap-4 text-xs font-mono">
           <span className="text-emerald-400">
-            w_carbon: {Number(decision.weights.carbon_weight).toFixed(2)}
+            w_carbon: {safeWeights.carbon_weight.toFixed(2)}
           </span>
           <span className="text-amber-400">
-            w_cost: {Number(decision.weights.cost_weight).toFixed(2)}
+            w_cost: {safeWeights.cost_weight.toFixed(2)}
           </span>
           <span className="text-cyan-400">
-            w_latency: {Number(decision.weights.latency_weight).toFixed(2)}
+            w_latency: {safeWeights.latency_weight.toFixed(2)}
           </span>
         </div>
       </div>
 
       {/* Visual Subscore Breakdown */}
       <SubscoreBreakdown
-        candidates={decision.candidate_rankings}
-        weights={decision.weights}
+        candidates={candidateRankings}
+        weights={safeWeights}
       />
 
       {/* Candidate Rankings Detailed Table */}
@@ -172,80 +183,86 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
         <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono mb-3">
           Candidate Region Ranking Matrix
         </h4>
-        <div className="overflow-x-auto rounded-lg border border-slate-800/80">
-          <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider border-b border-slate-800/80">
-              <tr>
-                <th className="px-4 py-3">Rank</th>
-                <th className="px-4 py-3">Region</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Composite (C)</th>
-                <th className="px-4 py-3 text-right">Raw Carbon</th>
-                <th className="px-4 py-3 text-right">Raw Cost</th>
-                <th className="px-4 py-3 text-right">Raw Latency</th>
-                <th className="px-4 py-3 text-right">Norm (C / $ / L)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-sans">
-              {decision.candidate_rankings.map((cand) => (
-                <tr
-                  key={cand.region_id}
-                  className={`hover:bg-slate-900/40 transition-colors ${
-                    cand.rank === 1 && cand.is_feasible
-                      ? "bg-emerald-950/20 font-semibold"
-                      : !cand.is_feasible
-                      ? "opacity-50"
-                      : ""
-                  }`}
-                >
-                  <td className="px-4 py-3 font-mono">
-                    {cand.is_feasible ? (
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-bold ${
-                          cand.rank === 1
-                            ? "bg-emerald-500 text-slate-950"
-                            : "bg-slate-800 text-slate-300"
-                        }`}
-                      >
-                        #{cand.rank}
-                      </span>
-                    ) : (
-                      <span className="text-rose-400 text-xs">Infeasible</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-slate-200">
-                    {cand.region_code}
-                  </td>
-                  <td className="px-4 py-3">
-                    {cand.is_feasible ? (
-                      <span className="text-emerald-400 font-mono text-[11px]">Feasible</span>
-                    ) : (
-                      <span className="text-rose-400 font-mono text-[11px] flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" />
-                        {cand.rejection_reason || "Constraint Violation"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
-                    {cand.is_feasible ? Number(cand.composite_score).toFixed(4) : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">
-                    {Number(cand.raw_carbon_gco2).toFixed(1)} gCO₂
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">
-                    ${Number(cand.raw_cost_usd).toFixed(4)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-300">
-                    {Number(cand.raw_latency_ms).toFixed(1)} ms
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-400 text-[11px]">
-                    {Number(cand.norm_carbon).toFixed(2)} / {Number(cand.norm_cost).toFixed(2)} / {Number(cand.norm_latency).toFixed(2)}
-                  </td>
+        {candidateRankings.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400 rounded-lg border border-slate-800/80 bg-slate-900/40">
+            No candidate regional evaluations recorded for this decision (e.g. workload deferral prior to dispatch).
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-slate-800/80">
+            <table className="w-full text-left text-xs font-mono">
+              <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider border-b border-slate-800/80">
+                <tr>
+                  <th className="px-4 py-3">Rank</th>
+                  <th className="px-4 py-3">Region</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Composite (C)</th>
+                  <th className="px-4 py-3 text-right">Raw Carbon</th>
+                  <th className="px-4 py-3 text-right">Raw Cost</th>
+                  <th className="px-4 py-3 text-right">Raw Latency</th>
+                  <th className="px-4 py-3 text-right">Norm (C / $ / L)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-sans">
+                {candidateRankings.map((cand: any) => (
+                  <tr
+                    key={cand.region_id || cand.region_code}
+                    className={`hover:bg-slate-900/40 transition-colors ${
+                      cand.rank === 1 && cand.is_feasible
+                        ? "bg-emerald-950/20 font-semibold"
+                        : !cand.is_feasible
+                        ? "opacity-50"
+                        : ""
+                    }`}
+                  >
+                    <td className="px-4 py-3 font-mono">
+                      {cand.is_feasible ? (
+                        <span
+                          className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                            cand.rank === 1
+                              ? "bg-emerald-500 text-slate-950"
+                              : "bg-slate-800 text-slate-300"
+                          }`}
+                        >
+                          #{cand.rank}
+                        </span>
+                      ) : (
+                        <span className="text-rose-400 text-xs">Infeasible</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-slate-200">
+                      {cand.region_code}
+                    </td>
+                    <td className="px-4 py-3">
+                      {cand.is_feasible ? (
+                        <span className="text-emerald-400 font-mono text-[11px]">Feasible</span>
+                      ) : (
+                        <span className="text-rose-400 font-mono text-[11px] flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {cand.rejection_reason || "Constraint Violation"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                      {cand.is_feasible && cand.composite_score != null ? Number(cand.composite_score).toFixed(4) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      {cand.raw_carbon_gco2 != null ? `${Number(cand.raw_carbon_gco2).toFixed(1)} gCO₂` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      {cand.raw_cost_usd != null ? `$${Number(cand.raw_cost_usd).toFixed(4)}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      {cand.raw_latency_ms != null ? `${Number(cand.raw_latency_ms).toFixed(1)} ms` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400 text-[11px]">
+                      {cand.norm_carbon != null ? Number(cand.norm_carbon).toFixed(2) : "—"} / {cand.norm_cost != null ? Number(cand.norm_cost).toFixed(2) : "—"} / {cand.norm_latency != null ? Number(cand.norm_latency).toFixed(2) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

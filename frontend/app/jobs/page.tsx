@@ -33,18 +33,38 @@ export default function JobsPage() {
   }, [filterStatus]);
 
   const handleCreateJob = async (payload: JobCreatePayload) => {
-    await apiClient.createJob(payload);
-    await fetchJobs();
+    try {
+      await apiClient.createJob(payload);
+    } catch (err: any) {
+      console.error("Job creation failed:", err);
+      alert(err.message || "Failed to create job.");
+    } finally {
+      await fetchJobs();
+    }
   };
 
   const handleTriggerScheduling = async (jobId: string) => {
-    await apiClient.triggerScheduling(jobId);
-    await fetchJobs();
+    try {
+      const res = await apiClient.triggerScheduling(jobId);
+      if (res.decision_action === "REJECT") {
+        alert(`Workload Infeasible: ${res.decision_reason || "Deadline slack is exhausted."}`);
+      }
+    } catch (err: any) {
+      console.error("Scheduling evaluation failed:", err);
+      alert(err.message || "Scheduling evaluation failed.");
+    } finally {
+      await fetchJobs();
+    }
   };
 
   const handleCancelJob = async (jobId: string) => {
-    await apiClient.cancelJob(jobId);
-    await fetchJobs();
+    try {
+      await apiClient.cancelJob(jobId);
+    } catch (err: any) {
+      console.error("Job cancellation failed:", err);
+    } finally {
+      await fetchJobs();
+    }
   };
 
   const statuses = [

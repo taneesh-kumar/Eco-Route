@@ -155,3 +155,34 @@ class DeferredJobEvaluator:
 
         await session.flush()
         return summary
+
+    async def run_deferral_loop(self, sweep_interval: float = 5.0) -> None:
+        """Periodically sweeps and re-evaluates all WAITING jobs."""
+        import asyncio
+        from app.db.session import get_db_sessionmaker
+        self._running = True
+        logger.info("DeferredJobEvaluator started background sweep loop.")
+        while getattr(self, "_running", True):
+            try:
+                sessionmaker = get_db_sessionmaker()
+                if sessionmaker:
+                    async with sessionmaker() as session:
+                        try:
+                            summary = await self.evaluate_deferred_jobs(session=session, limit=50)
+                            if summary.get("dispatched", 0) > 0 or summary.get("expired", 0) > 0:
+                                await session.commit()
+                                logger.info(f"Deferred sweep completed: {summary}")
+                        except Exception as exc:
+                            await session.rollback()
+                            logger.error(f"Deferral sweep loop error: {exc}", exc_info=True)
+                await asyncio.sleep(sweep_interval)
+            except asyncio.CancelledError:
+                logger.info("DeferredJobEvaluator sweep loop cancelled.")
+                break
+            except Exception as top_exc:
+                logger.error(f"Deferral sweep loop top-level error: {top_exc}")
+                await asyncio.sleep(sweep_interval)
+
+    def stop(self) -> None:
+        """Stops the deferral sweep loop."""
+        self._running = False

@@ -200,12 +200,13 @@ export function JobLifecycleTable({
                       Explain <ArrowRight className="w-3 h-3" />
                     </Link>
 
-                    {job.status === "PENDING" && onTriggerScheduling && (
+                    {(job.status === "PENDING" || job.status === "WAITING") && onTriggerScheduling && (
                       <button
                         onClick={() => onTriggerScheduling(job.id)}
                         className="text-xs px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer"
+                        title={job.status === "WAITING" ? "Force Evaluation / Dispatch" : "Schedule Workload"}
                       >
-                        Schedule
+                        {job.status === "WAITING" ? "Re-evaluate" : "Schedule"}
                       </button>
                     )}
 

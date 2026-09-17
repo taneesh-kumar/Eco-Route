@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from fastapi import FastAPI, Request
@@ -8,7 +9,10 @@ from app.api.router import api_router
 from app.api.v1.health import router as health_router
 from app.core.config import get_settings
 from app.core.logging import logger, setup_logging
-from app.db.session import close_db_connections
+from app.db.seed import seed_default_regions
+from app.db.session import close_db_connections, get_db_sessionmaker
+from app.execution.deferral_evaluator import DeferredJobEvaluator
+from app.execution.worker import ExecutionWorker
 from app.infrastructure.redis import close_redis_connections
 
 
@@ -18,9 +22,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging(settings.LOG_LEVEL)
     logger.info(f"Starting EcoRoute backend in {settings.ENVIRONMENT} mode...")
 
+    # 1. Seed cloud regions if not present
+    try:
+        sessionmaker = get_db_sessionmaker()
+        if sessionmaker:
+            async with sessionmaker() as session:
+                await seed_default_regions(session)
+    except Exception as exc:
+        logger.error(f"Failed to verify/seed default cloud regions on startup: {exc}")
+
+    # 2. Launch background execution worker and deferral sweep
+    worker = ExecutionWorker(worker_id="backend-worker-01")
+    evaluator = DeferredJobEvaluator()
+    worker_task = asyncio.create_task(worker.run_loop(poll_interval=0.5))
+    evaluator_task = asyncio.create_task(evaluator.run_deferral_loop(sweep_interval=3.0))
+
     yield
 
     logger.info("Shutting down EcoRoute backend...")
+    worker.stop()
+    evaluator.stop()
+    worker_task.cancel()
+    evaluator_task.cancel()
+    try:
+        await asyncio.gather(worker_task, evaluator_task, return_exceptions=True)
+    except Exception:
+        pass
+
     await close_db_connections()
     await close_redis_connections()
     logger.info("EcoRoute backend shutdown complete.")

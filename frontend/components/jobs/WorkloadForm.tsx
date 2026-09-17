@@ -27,11 +27,11 @@ const PRESETS: Record<
   BATCH: {
     name: "batch-analytics-etl",
     type: "BATCH",
-    cpu: 8,
-    mem: 32,
-    dur: 600,
+    cpu: 4,
+    mem: 16,
+    dur: 15,
     pri: 5,
-    offset: 1800,
+    offset: 45,
     wCarbon: 0.6,
     wCost: 0.3,
     wLatency: 0.1,
@@ -41,21 +41,21 @@ const PRESETS: Record<
     type: "INFERENCE",
     cpu: 2,
     mem: 8,
-    dur: 15,
+    dur: 5,
     pri: 9,
-    offset: 45,
+    offset: 10,
     wCarbon: 0.2,
     wCost: 0.2,
     wLatency: 0.6,
   },
   TRAINING: {
-    name: "distributed-transformer-training",
+    name: "transformer-training-step",
     type: "TRAINING",
-    cpu: 32,
-    mem: 128,
-    dur: 2400,
+    cpu: 16,
+    mem: 64,
+    dur: 30,
     pri: 4,
-    offset: 4800,
+    offset: 60,
     wCarbon: 0.7,
     wCost: 0.2,
     wLatency: 0.1,
@@ -63,13 +63,13 @@ const PRESETS: Record<
 };
 
 export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
-  const [workloadName, setWorkloadName] = useState("workload-alpha-01");
+  const [workloadName, setWorkloadName] = useState("demo-batch-etl-01");
   const [workloadType, setWorkloadType] = useState<WorkloadType>("BATCH");
-  const [cpuCores, setCpuCores] = useState(8);
-  const [memoryGb, setMemoryGb] = useState(32);
-  const [duration, setDuration] = useState(600);
+  const [cpuCores, setCpuCores] = useState(4);
+  const [memoryGb, setMemoryGb] = useState(16);
+  const [duration, setDuration] = useState(15);
   const [priority, setPriority] = useState(5);
-  const [deadlineOffset, setDeadlineOffset] = useState(1800);
+  const [deadlineOffset, setDeadlineOffset] = useState(45);
   const [maxRetries, setMaxRetries] = useState(3);
 
   // Multi-objective weights

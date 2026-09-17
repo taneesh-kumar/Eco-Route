@@ -233,6 +233,31 @@ class ExecutionWorker:
             # Safely release Redis mutex lock
             await self.idempotency_manager.release_lock(attempt_id, self.worker_id)
 
+    async def run_loop(self, poll_interval: float = 0.5) -> None:
+        """Continuously dequeues and processes attempts from the queue."""
+        from app.db.session import get_db_sessionmaker
+        self._running = True
+        logger.info(f"ExecutionWorker '{self.worker_id}' started background processing loop.")
+        while self._running:
+            try:
+                sessionmaker = get_db_sessionmaker()
+                if sessionmaker:
+                    async with sessionmaker() as session:
+                        try:
+                            processed_id = await self.process_one(session=session, timeout_seconds=1)
+                            if processed_id:
+                                await session.commit()
+                        except Exception as exc:
+                            await session.rollback()
+                            logger.error(f"Worker '{self.worker_id}' run loop attempt error: {exc}", exc_info=True)
+                await asyncio.sleep(poll_interval)
+            except asyncio.CancelledError:
+                logger.info(f"Worker '{self.worker_id}' run loop cancelled.")
+                break
+            except Exception as top_exc:
+                logger.error(f"Worker '{self.worker_id}' run loop top-level error: {top_exc}")
+                await asyncio.sleep(poll_interval)
+
     def stop(self) -> None:
         """Signals the worker loop to shut down cleanly."""
         self._running = False
