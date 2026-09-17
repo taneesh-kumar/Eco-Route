@@ -144,7 +144,7 @@ export function JobLifecycleTable({
                     {Number(job.cpu_demand)} vCPU &bull; {Number(job.memory_demand)} GB
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    ~{Number(job.estimated_duration_seconds)}s
+                    ~{Number(job.base_execution_duration ?? job.estimated_duration_seconds ?? 0)}s
                   </div>
                 </td>
 

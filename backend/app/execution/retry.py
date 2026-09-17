@@ -163,10 +163,15 @@ class RetryManager:
                 f"(Attempt #{new_attempt.attempt_number}, Region: '{new_attempt.region_id}')."
             )
             return new_attempt
-        else:
-            # Deferred under current conditions
+        elif new_decision.decision_action == DecisionAction.DEFER:
             db_job.status = JobStatus.WAITING.value
             db_job.updated_at = now
             await session.flush()
             logger.info(f"Retry evaluation resulted in DEFER for Job '{db_job.id}'.")
+            return None
+        else:
+            db_job.status = JobStatus.FAILED.value
+            db_job.updated_at = now
+            await session.flush()
+            logger.info(f"Retry evaluation resulted in REJECT for Job '{db_job.id}'.")
             return None

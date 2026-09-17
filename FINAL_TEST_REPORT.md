@@ -12,7 +12,7 @@
 The entire EcoRoute testing matrix was executed across all architectural layers: domain entities, state machines, normalization math, multi-objective scoring, fallback protocols, persistence models, Redis attempt queues, distributed mutex locks, Compare-And-Swap (CAS) claiming, dispatchers, retry managers, worker processing, REST API endpoints, deterministic simulation benchmarks, and concurrent race condition harnesses.
 
 ### Authoritative Result Summary
-- **Backend Test Suite:** **210 PASSED**, 0 Failed, 0 Skipped (Runtime: 54.49s)
+- **Backend Test Suite:** **213 PASSED**, 0 Failed, 0 Skipped (Runtime: 53.43s)
 - **Frontend Typecheck (`tsc --noEmit`):** **0 ERRORS**
 - **Frontend Build (`next build`):** **SUCCESSFUL** (8 routes compiled and prerendered)
 
@@ -43,10 +43,10 @@ The entire EcoRoute testing matrix was executed across all architectural layers:
 | `tests/test_retry_manager.py` | Total attempt budget preservation & fresh re-routing | 2 | **PASSED** |
 | `tests/test_deferred_evaluator.py` | Stale deferred job sweep and slack evaluation | 2 | **PASSED** |
 | `tests/test_execution_integration.py` | Full execution pipeline and fresh reroute lifecycle | 2 | **PASSED** |
-| `tests/test_api_v1.py` | REST API endpoints for jobs, scheduling, attempts, regions, carbon, analytics | 9 | **PASSED** |
+| `tests/test_api_v1.py` | REST API endpoints for jobs, scheduling, attempts, regions, carbon, analytics | 12 | **PASSED** |
 | `tests/test_simulation.py` | Deterministic population generation, cloned scenario isolation, 5 variants | 6 | **PASSED** |
 | `tests/test_concurrency.py` | 10 concurrent worker CAS claims, monotonic numbering, audit trail | 3 | **PASSED** |
-| **TOTAL** | | **210** | **100% PASSED** |
+| **TOTAL** | | **213** | **100% PASSED** |
 
 ---
 

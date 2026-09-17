@@ -307,3 +307,131 @@ async def test_api_analytics_summary(override_db):
     assert data["completed_jobs"] == 8
     assert data["total_energy_kwh"] == "0.045000"
     assert data["counterfactual_carbon_reduction_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_api_submit_workload_with_aliases(override_db):
+    """Verify WorkloadCreate alias mappings (cpu_cores, memory_gb, estimated_duration_seconds, deadline_offset_seconds)."""
+    transport = ASGITransport(app=app)
+    mock_db_job = MagicMock()
+    mock_db_job.id = uuid.uuid4()
+    mock_db_job.workload_name = "alias-workload"
+    mock_db_job.workload_type = "BATCH"
+    mock_db_job.cpu_demand = Decimal("8.0")
+    mock_db_job.memory_demand = Decimal("32.0")
+    mock_db_job.base_execution_duration = Decimal("600.0")
+    mock_db_job.priority = 5
+    mock_db_job.deadline = datetime.now(timezone.utc)
+    mock_db_job.status = "DISPATCHED"
+    mock_db_job.current_attempt_count = 1
+    mock_db_job.max_retries = 4
+    mock_db_job.created_at = datetime.now(timezone.utc)
+    mock_db_job.updated_at = datetime.now(timezone.utc)
+
+    mock_decision = MagicMock()
+    mock_decision.id = uuid.uuid4()
+    mock_decision.decision_action = DecisionAction.EXECUTE
+    mock_decision.selected_region_id = uuid.uuid4()
+
+    mock_attempt = MagicMock()
+    mock_attempt.id = uuid.uuid4()
+
+    payload = {
+        "workload_name": "alias-workload",
+        "workload_type": "BATCH",
+        "cpu_cores": 8.0,
+        "memory_gb": 32.0,
+        "estimated_duration_seconds": 600.0,
+        "priority": 5,
+        "deadline_offset_seconds": 3600,
+        "max_retries": 4,
+    }
+
+    with patch(
+        "app.api.v1.jobs._job_service.submit_workload",
+        new=AsyncMock(return_value=(mock_db_job, mock_decision, mock_attempt)),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.post("/api/v1/jobs", json=payload)
+
+    assert res.status_code == 201
+    data = res.json()
+    assert data["job"]["workload_name"] == "alias-workload"
+    assert data["job"]["max_retries"] == 4
+
+
+@pytest.mark.asyncio
+async def test_api_scheduling_recent_decisions(override_db):
+    """Verify GET /api/v1/scheduling/decisions/recent returns a simple list."""
+    transport = ASGITransport(app=app)
+    mock_decision = MagicMock()
+    mock_decision.id = uuid.uuid4()
+    mock_decision.job_id = uuid.uuid4()
+    mock_decision.attempt_id = None
+    mock_decision.selected_region_id = uuid.uuid4()
+    mock_decision.decision_action = "EXECUTE"
+    mock_decision.cost_score_jr = Decimal("0.1234")
+    mock_decision.estimated_energy_kwh = Decimal("0.05")
+    mock_decision.estimated_co2eq_grams = Decimal("10.0")
+    mock_decision.carbon_source_used = "ELECTRICITY_MAPS"
+    mock_decision.carbon_quality_used = "LIVE"
+    mock_decision.decision_reason = "Optimal composite score"
+    mock_decision.created_at = datetime.now(timezone.utc)
+
+    with patch(
+        "app.api.v1.scheduling._scheduling_service.list_decisions",
+        new=AsyncMock(return_value=([mock_decision], 1)),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get("/api/v1/scheduling/decisions/recent")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert isinstance(data, list)
+    assert len(data) == 1
+    assert data[0]["id"] == str(mock_decision.id)
+
+
+@pytest.mark.asyncio
+async def test_api_carbon_latest(override_db):
+    """Verify GET /api/v1/carbon/latest returns latest observations for active regions."""
+    transport = ASGITransport(app=app)
+    mock_region = MagicMock()
+    mock_region.id = uuid.uuid4()
+    mock_region.code = "se-sto"
+    mock_region.name = "Sweden Central"
+    mock_region.provider = "AWS"
+    mock_region.max_cpu_capacity = Decimal("64.0")
+    mock_region.max_memory_capacity = Decimal("256.0")
+    mock_region.current_utilization = Decimal("0.25")
+    mock_region.performance_factor = Decimal("1.0")
+    mock_region.idle_power_watts = Decimal("50.0")
+    mock_region.peak_power_watts = Decimal("200.0")
+    mock_region.network_latency_ms = Decimal("25.0")
+    mock_region.is_available = True
+    mock_region.is_active = True
+
+    mock_ci = CarbonIntensity(
+        quality=CarbonQuality.LIVE,
+        source=CarbonSource.ELECTRICITY_MAPS,
+        value=Decimal("45.0"),
+    )
+
+    with patch(
+        "app.persistence.repositories.region_repository.RegionRepository.list_active",
+        new=AsyncMock(return_value=[mock_region]),
+    ), patch(
+        "app.carbon.service.CarbonService.get_carbon_intensity",
+        new=AsyncMock(return_value=mock_ci),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get("/api/v1/carbon/latest")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert isinstance(data, list)
+    assert len(data) == 1
+    assert data[0]["region_code"] == "se-sto"
+    assert data[0]["carbon_intensity"] == "45.0"
+    assert data[0]["is_trustworthy"] is True
+

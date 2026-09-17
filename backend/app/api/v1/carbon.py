@@ -1,6 +1,7 @@
 """Carbon API endpoints for grid carbon observation inspection."""
 
 from datetime import datetime, timezone
+from typing import List, Optional
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,3 +57,48 @@ async def get_current_carbon(
         is_trustworthy=carbon.is_trustworthy,
         observation_timestamp=datetime.now(timezone.utc),
     )
+
+
+@router.get("/latest", response_model=List[CarbonObservationResponse])
+async def get_latest_carbon_all_regions(
+    region_code: str = None,
+    session: AsyncSession = Depends(get_db_session),
+) -> List[CarbonObservationResponse]:
+    """Retrieves latest carbon intensity across all active regions."""
+    repo = RegionRepository(session)
+    active_regions = await repo.list_active()
+    now = datetime.now(timezone.utc)
+
+    if region_code:
+        active_regions = [r for r in active_regions if r.code == region_code]
+
+    results: List[CarbonObservationResponse] = []
+    for db_region in active_regions:
+        domain_region = DomainRegion(
+            id=db_region.id,
+            code=db_region.code,
+            name=db_region.name,
+            provider=db_region.provider,
+            max_cpu_capacity=db_region.max_cpu_capacity,
+            max_memory_capacity=db_region.max_memory_capacity,
+            current_utilization=db_region.current_utilization,
+            performance_factor=db_region.performance_factor,
+            idle_power_watts=db_region.idle_power_watts,
+            peak_power_watts=db_region.peak_power_watts,
+            network_latency_ms=db_region.network_latency_ms,
+            is_available=db_region.is_available,
+            is_active=db_region.is_active,
+        )
+        carbon = await _carbon_service.get_carbon_intensity(domain_region, session=session)
+        results.append(
+            CarbonObservationResponse(
+                region_id=db_region.id,
+                region_code=db_region.code,
+                carbon_intensity=carbon.value if carbon.is_trustworthy else None,
+                data_quality=carbon.quality.value,
+                source=carbon.source.value,
+                is_trustworthy=carbon.is_trustworthy,
+                observation_timestamp=now,
+            )
+        )
+    return results

@@ -56,7 +56,7 @@ class JobService:
             deadline=payload.deadline,
             status=JobStatus.PENDING.value,
             current_attempt_count=0,
-            max_retries=3,
+            max_retries=payload.max_retries,
             created_at=now,
             updated_at=now,
         )
@@ -93,7 +93,7 @@ class JobService:
             deadline=payload.deadline,
             status=JobStatus.PENDING,
             current_attempt_count=0,
-            max_retries=3,
+            max_retries=payload.max_retries,
             created_at=now,
         )
 
@@ -112,11 +112,19 @@ class JobService:
                 decision=decision,
                 session=session,
             )
-        else:
+        elif decision.decision_action == DecisionAction.DEFER:
             db_job.status = JobStatus.WAITING.value
             db_job.updated_at = now
             await session.flush()
+        elif decision.decision_action == DecisionAction.REJECT:
+            db_job.status = JobStatus.FAILED.value
+            db_job.updated_at = now
+            await session.flush()
+        else:
+            db_job.updated_at = now
+            await session.flush()
 
+        await session.refresh(db_job)
         return db_job, decision, dispatched_attempt
 
     async def get_job(

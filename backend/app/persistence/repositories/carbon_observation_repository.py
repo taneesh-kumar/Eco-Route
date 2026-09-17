@@ -16,7 +16,7 @@ class CarbonObservationRepository(BaseRepository[CarbonObservation]):
     """Repository managing durable persistence for carbon intensity observations."""
 
     def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session, CarbonObservation)
+        super().__init__(CarbonObservation, session)
 
     async def get_latest_for_region(self, region_id: uuid.UUID) -> Optional[CarbonObservation]:
         """Retrieves the most recent carbon observation recorded for a given region."""

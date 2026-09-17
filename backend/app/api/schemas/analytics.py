@@ -13,9 +13,13 @@ class AnalyticsSummaryResponse(BaseModel):
     completed_jobs: int
     failed_jobs: int
     waiting_jobs: int
+    running_jobs: int = 0
+    total_attempts: int = 0
     total_energy_kwh: Decimal
     total_co2eq_grams: Decimal
+    avg_job_duration_seconds: Decimal = Decimal("0.0")
     counterfactual_carbon_reduction_pct: Optional[Decimal] = None
+    carbon_savings_pct_vs_baseline: Optional[Decimal] = None
     sla_compliance_rate: Decimal
     deferral_rate: Decimal
     failure_rate: Decimal

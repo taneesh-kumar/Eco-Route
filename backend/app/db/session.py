@@ -46,7 +46,12 @@ async def get_db_session():
     if sessionmaker is None:
         raise RuntimeError("Database sessionmaker is not available.")
     async with sessionmaker() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 async def check_db_connectivity() -> Tuple[bool, str]:

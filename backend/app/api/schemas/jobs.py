@@ -1,10 +1,10 @@
 """Pydantic schemas for workload intake and job inspection."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.persistence.models.enums import SchedulerVariant, WorkloadType
 
@@ -22,6 +22,27 @@ class WorkloadCreate(BaseModel):
         default=SchedulerVariant.ECOROUTE,
         description="Scheduling strategy variant to evaluate",
     )
+    max_retries: int = Field(3, ge=1, le=10, description="Total attempt budget")
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # cpu_cores -> cpu_demand
+            if "cpu_cores" in data and "cpu_demand" not in data:
+                data["cpu_demand"] = data["cpu_cores"]
+            # memory_gb -> memory_demand
+            if "memory_gb" in data and "memory_demand" not in data:
+                data["memory_demand"] = data["memory_gb"]
+            # estimated_duration_seconds -> base_execution_duration
+            if "estimated_duration_seconds" in data and "base_execution_duration" not in data:
+                data["base_execution_duration"] = data["estimated_duration_seconds"]
+            # deadline_offset_seconds -> deadline
+            if "deadline_offset_seconds" in data and "deadline" not in data:
+                offset = float(data["deadline_offset_seconds"])
+                now = datetime.now(timezone.utc)
+                data["deadline"] = now + timedelta(seconds=offset)
+        return data
 
 
 class JobResponse(BaseModel):

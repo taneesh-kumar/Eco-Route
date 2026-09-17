@@ -15,7 +15,7 @@ class SchedulingDecisionRepository(BaseRepository[DBDecision]):
     """Repository managing durable persistence for scheduling decisions with full explainability metadata."""
 
     def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session, DBDecision)
+        super().__init__(DBDecision, session)
 
     async def get_latest_for_job(self, job_id: uuid.UUID) -> Optional[DBDecision]:
         """Retrieves the most recent scheduling decision recorded for a workload."""

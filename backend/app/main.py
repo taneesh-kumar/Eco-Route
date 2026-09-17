@@ -55,15 +55,22 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.error(f"Unhandled exception: {exc}", exc_info=True)
-        return JSONResponse(
+        response = JSONResponse(
             status_code=500,
             content={
                 "type": "https://errors.ecoroute.dev/internal-server-error",
                 "title": "Internal Server Error",
                 "status": 500,
-                "detail": "An unexpected server error occurred.",
+                "detail": str(exc) if not settings.is_production else "An unexpected server error occurred.",
             },
         )
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
 
     return app
 

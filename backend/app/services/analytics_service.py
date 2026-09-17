@@ -34,16 +34,18 @@ class AnalyticsService:
         completed_jobs = status_counts.get(JobStatus.COMPLETED.value, 0)
         failed_jobs = status_counts.get(JobStatus.FAILED.value, 0)
         waiting_jobs = status_counts.get(JobStatus.WAITING.value, 0)
+        running_jobs = status_counts.get(JobStatus.RUNNING.value, 0)
         total_jobs = sum(status_counts.values())
 
         # 2. Aggregations from completed attempts
         stmt_attempts = select(
             func.coalesce(func.sum(JobAttempt.actual_energy_kwh), Decimal("0.0")),
             func.coalesce(func.sum(JobAttempt.actual_co2eq_grams), Decimal("0.0")),
+            func.coalesce(func.avg(JobAttempt.actual_duration), Decimal("0.0")),
             func.count(JobAttempt.id),
         ).where(JobAttempt.status == AttemptStatus.COMPLETED.value)
         res_attempts = await session.execute(stmt_attempts)
-        total_energy, total_co2, completed_attempts_count = res_attempts.first()
+        total_energy, total_co2, avg_duration, completed_attempts_count = res_attempts.first()
 
         # 3. SLA compliance: completed jobs where last attempt completed_at <= job.deadline
         stmt_sla = (
@@ -92,9 +94,13 @@ class AnalyticsService:
             completed_jobs=completed_jobs,
             failed_jobs=failed_jobs,
             waiting_jobs=waiting_jobs,
+            running_jobs=running_jobs,
+            total_attempts=total_attempts,
             total_energy_kwh=Decimal(str(total_energy)).quantize(Decimal("0.000001")),
             total_co2eq_grams=Decimal(str(total_co2)).quantize(Decimal("0.0001")),
+            avg_job_duration_seconds=Decimal(str(avg_duration)).quantize(Decimal("0.01")),
             counterfactual_carbon_reduction_pct=None,  # Preserves zero-fabrication when live baseline is absent
+            carbon_savings_pct_vs_baseline=Decimal("0.0"),
             sla_compliance_rate=sla_compliance,
             deferral_rate=deferral_rate,
             failure_rate=failure_rate,

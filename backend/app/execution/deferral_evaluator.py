@@ -131,6 +131,17 @@ class DeferredJobEvaluator:
                         event_timestamp=now,
                     )
                     summary["dispatched"] += 1
+                elif decision.decision_action == DecisionAction.REJECT:
+                    db_job.status = JobStatus.FAILED.value
+                    db_job.updated_at = now
+                    await audit_repo.record_event(
+                        event_type="JOB_FAILED",
+                        actor="DeferredJobEvaluator",
+                        job_id=db_job.id,
+                        event_metadata={"reason": "Infeasible under current conditions during deferred evaluation"},
+                        event_timestamp=now,
+                    )
+                    summary["expired"] += 1
                 else:
                     # Still DEFER
                     summary["remained_waiting"] += 1

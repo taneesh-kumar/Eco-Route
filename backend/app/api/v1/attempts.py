@@ -15,6 +15,7 @@ router = APIRouter(prefix="", tags=["Attempts"])
 
 
 @router.get("/jobs/{job_id}/attempts", response_model=List[AttemptResponse])
+@router.get("/attempts/job/{job_id}", response_model=List[AttemptResponse])
 async def list_job_attempts(
     job_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session),
