@@ -59,12 +59,14 @@ async def get_current_carbon(
     )
 
 
+import asyncio
+
 @router.get("/latest", response_model=List[CarbonObservationResponse])
 async def get_latest_carbon_all_regions(
     region_code: str = None,
     session: AsyncSession = Depends(get_db_session),
 ) -> List[CarbonObservationResponse]:
-    """Retrieves latest carbon intensity across all active regions."""
+    """Retrieves latest carbon intensity across all active regions concurrently."""
     repo = RegionRepository(session)
     active_regions = await repo.list_active()
     now = datetime.now(timezone.utc)
@@ -72,8 +74,7 @@ async def get_latest_carbon_all_regions(
     if region_code:
         active_regions = [r for r in active_regions if r.code == region_code]
 
-    results: List[CarbonObservationResponse] = []
-    for db_region in active_regions:
+    async def _fetch_region_carbon(db_region) -> CarbonObservationResponse:
         domain_region = DomainRegion(
             id=db_region.id,
             code=db_region.code,
@@ -88,10 +89,11 @@ async def get_latest_carbon_all_regions(
             network_latency_ms=db_region.network_latency_ms,
             is_available=db_region.is_available,
             is_active=db_region.is_active,
+            electricity_maps_zone=getattr(db_region, "electricity_maps_zone", None),
         )
-        carbon = await _carbon_service.get_carbon_intensity(domain_region, session=session)
-        results.append(
-            CarbonObservationResponse(
+        try:
+            carbon = await _carbon_service.get_carbon_intensity(domain_region, session=session)
+            return CarbonObservationResponse(
                 region_id=db_region.id,
                 region_code=db_region.code,
                 carbon_intensity=carbon.value if carbon.is_trustworthy else None,
@@ -100,5 +102,16 @@ async def get_latest_carbon_all_regions(
                 is_trustworthy=carbon.is_trustworthy,
                 observation_timestamp=now,
             )
-        )
-    return results
+        except Exception:
+            return CarbonObservationResponse(
+                region_id=db_region.id,
+                region_code=db_region.code,
+                carbon_intensity=None,
+                data_quality="UNAVAILABLE",
+                source="UNAVAILABLE",
+                is_trustworthy=False,
+                observation_timestamp=now,
+            )
+
+    results = await asyncio.gather(*[_fetch_region_carbon(r) for r in active_regions])
+    return list(results)

@@ -77,7 +77,7 @@ class CarbonCache:
 
     async def get(self, region_id: uuid.UUID) -> Optional[CachedCarbonObservation]:
         """Retrieves a cached observation. Returns None if miss, expired, or Redis unavailable."""
-        client = await get_redis_client()
+        client = get_redis_client()
         if client is None:
             return None
 
@@ -144,7 +144,7 @@ class CarbonCache:
         emission_factor_type: str = "lifecycle",
     ) -> bool:
         """Writes observation to Redis with TTL. Returns True if successful."""
-        client = await get_redis_client()
+        client = get_redis_client()
         if client is None:
             return False
 
@@ -178,7 +178,7 @@ class CarbonCache:
 
     async def get_forecast(self, zone: str) -> Optional[List[CachedForecastPoint]]:
         """Retrieves cached forecast points for a zone."""
-        client = await get_redis_client()
+        client = get_redis_client()
         if client is None:
             return None
 
@@ -202,7 +202,7 @@ class CarbonCache:
 
     async def set_forecast(self, zone: str, points: List[CachedForecastPoint]) -> bool:
         """Stores forecast points in Redis."""
-        client = await get_redis_client()
+        client = get_redis_client()
         if client is None:
             return False
 

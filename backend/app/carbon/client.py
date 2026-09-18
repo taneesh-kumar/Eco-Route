@@ -137,7 +137,7 @@ class ElectricityMapsClient:
                 else:
                     obs_time = received_at
 
-                valid_until = obs_time + self._validity_duration
+                valid_until = max(obs_time + self._validity_duration, received_at + self._validity_duration)
 
                 return LiveCarbonResult(
                     carbon_intensity=Decimal(str(intensity_val)),
