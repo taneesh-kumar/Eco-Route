@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppNavigation } from "@/components/layout/AppNavigation";
+import { ReticleCursor } from "@/components/ui/ReticleCursor";
 
 export const metadata: Metadata = {
-  title: "EcoRoute — Carbon-Aware Cloud Workload Scheduling Platform",
+  title: "EcoRoute — Carbon-Aware Cloud Workload Orchestration Engine",
   description:
-    "Intelligent Multi-Objective Workload Dispatching with Zero-Carbon Fabrication, Real-Time Grid Telemetry, and Mathematical Decision Explainability.",
+    "Scientific Multi-Objective Spatial Workload Scheduling Platform with Zero-Carbon Fabrication, Real-Time Grid Telemetry, and Mathematical Decision Explainability.",
 };
 
 export default function RootLayout({
@@ -15,34 +16,33 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="antialiased min-h-screen bg-[#090d16] text-slate-100 flex flex-row overflow-x-hidden font-sans">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-          <header className="h-16 border-b border-slate-800/80 bg-[#0c101c]/80 backdrop-blur px-8 flex items-center justify-between sticky top-0 z-30">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold text-slate-200">
-                Carbon-Aware Orchestration Engine
-              </span>
-              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono">
-                Active &bull; Simulated Multi-Region
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
-              <span className="hidden sm:inline">Zero Fabrication Policy: Active</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-            </div>
-          </header>
+      <body className="antialiased min-h-screen bg-[#06080d] text-slate-100 flex flex-col overflow-x-hidden font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+        <ReticleCursor />
+        <AppNavigation />
 
-          <main className="flex-1 p-8 max-w-7xl w-full mx-auto space-y-8">
-            {children}
-          </main>
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          {children}
+        </main>
 
-          <footer className="border-t border-slate-800/60 px-8 py-4 text-xs text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2 bg-[#090d16]">
-            <span>EcoRoute Platform &bull; Academic Carbon-Aware Scheduling System</span>
-            <span className="font-mono">FastAPI &bull; Next.js 16 &bull; Supabase &bull; Upstash</span>
-          </footer>
-        </div>
+        <footer className="border-t border-white/[0.05] bg-[#06080d]/80 backdrop-blur py-6 px-4 sm:px-8 text-xs text-slate-400">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-slate-300 font-medium">EcoRoute Autonomous Platform</span>
+              <span className="text-slate-600">&bull;</span>
+              <span>Zero Fabrication Policy Guaranteed</span>
+            </div>
+            <div className="font-mono text-[11px] text-slate-500 flex items-center gap-3">
+              <span>FastAPI Engine</span>
+              <span>&bull;</span>
+              <span>PostgreSQL + Redis</span>
+              <span>&bull;</span>
+              <span>Electricity Maps API</span>
+            </div>
+          </div>
+        </footer>
       </body>
     </html>
   );
 }
+

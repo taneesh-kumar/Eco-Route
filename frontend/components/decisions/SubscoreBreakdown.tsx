@@ -22,8 +22,8 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
 
   if (feasibleCandidates.length === 0) {
     return (
-      <div className="p-4 text-center text-xs text-slate-400">
-        No feasible candidates available to render subscore decomposition.
+      <div className="p-4 text-center text-xs text-slate-400 font-mono">
+        No feasible candidate regions available to render subscore decomposition.
       </div>
     );
   }
@@ -31,20 +31,20 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
   return (
     <div className="space-y-4">
       <div className="text-xs text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <span className="font-semibold text-slate-300">
-          Composite Objective Contributions: <span className="font-mono text-emerald-400">J_r = w_C·N(C) + w_T·N(T) + w_U·N(U) + w_L·N(L)</span>
+        <span className="font-semibold text-slate-300 font-mono">
+          Multi-Objective Contributions: <span className="text-emerald-400">J_r = w_C·N(C) + w_T·N(T) + w_U·N(U) + w_L·N(L)</span>
         </span>
         <div className="flex flex-wrap items-center gap-3 font-mono text-[11px]">
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-emerald-400">
             <span className="w-2 h-2 rounded bg-emerald-500" /> Carbon ({safeWeights.carbon_weight.toFixed(2)})
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-blue-400">
             <span className="w-2 h-2 rounded bg-blue-500" /> Duration ({safeWeights.time_weight.toFixed(2)})
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-purple-400">
             <span className="w-2 h-2 rounded bg-purple-500" /> Util ({safeWeights.utilization_weight.toFixed(2)})
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-cyan-400">
             <span className="w-2 h-2 rounded bg-cyan-500" /> Latency ({safeWeights.latency_weight.toFixed(2)})
           </span>
         </div>
@@ -54,7 +54,6 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
         {feasibleCandidates.map((cand: any) => {
           const compScore = cand.composite_score != null ? Number(cand.composite_score) : (cand.cost_score_jr != null ? Number(cand.cost_score_jr) : 0);
           const rawCarbon = cand.raw_carbon_gco2 != null ? Number(cand.raw_carbon_gco2) : (cand.emissions_co2eq != null ? Number(cand.emissions_co2eq) : 0);
-          const rawEnergy = cand.raw_energy_kwh != null ? Number(cand.raw_energy_kwh) : (cand.energy_kwh != null ? Number(cand.energy_kwh) : 0);
           const rawDuration = cand.raw_duration_seconds != null ? Number(cand.raw_duration_seconds) : (cand.estimated_duration != null ? Number(cand.estimated_duration) : 0);
           const rawLatency = cand.raw_latency_ms != null ? Number(cand.raw_latency_ms) : (cand.network_latency_ms != null ? Number(cand.network_latency_ms) : 0);
           const projUtil = cand.projected_utilization != null ? Number(cand.projected_utilization) : (cand.utilization != null ? Number(cand.utilization) : 0);
@@ -77,66 +76,68 @@ export function SubscoreBreakdown({ candidates = [], weights }: SubscoreBreakdow
           const utilPct = (utilPart / totalSub) * 100;
           const latencyPct = (latencyPart / totalSub) * 100;
 
+          const isOptimal = cand.rank === 1;
+
           return (
             <div
               key={cand.region_id || cand.region_code}
-              className={`p-3 rounded-lg border ${
-                cand.rank === 1
-                  ? "bg-emerald-950/20 border-emerald-500/30"
-                  : "bg-slate-900/50 border-slate-800"
+              className={`p-3.5 rounded-xl border transition-all ${
+                isOptimal
+                  ? "bg-emerald-950/20 border-emerald-500/40 shadow-md shadow-emerald-950/30"
+                  : "bg-slate-950/60 border-slate-800"
               }`}
             >
               <div className="flex items-center justify-between text-xs mb-2">
                 <div className="flex items-center gap-2">
                   <span
-                    className={`font-mono px-1.5 py-0.5 rounded text-[11px] font-bold ${
-                      cand.rank === 1
+                    className={`font-mono px-2 py-0.5 rounded text-[11px] font-bold ${
+                      isOptimal
                         ? "bg-emerald-500 text-slate-950"
                         : "bg-slate-800 text-slate-300"
                     }`}
                   >
                     #{cand.rank}
                   </span>
-                  <span className="font-semibold text-slate-200 font-mono">
+                  <span className="font-bold text-slate-100 font-mono text-sm">
                     {cand.region_code}
                   </span>
-                  {cand.rank === 1 && (
-                    <span className="text-[10px] uppercase font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                      Optimal
+                  {isOptimal && (
+                    <span className="text-[10px] uppercase font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40 font-bold">
+                      Optimal Target
                     </span>
                   )}
                 </div>
-                <span className="font-mono text-xs font-semibold text-emerald-400">
+                <span className="font-mono text-xs font-bold text-emerald-400">
                   J_r = {compScore.toFixed(4)}
                 </span>
               </div>
 
               {/* Stacked Component Bar */}
-              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex">
+              <div className="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden flex border border-slate-800">
                 <div
                   className="bg-emerald-500 h-full transition-all duration-300"
                   style={{ width: `${carbonPct}%` }}
-                  title={`Carbon Subscore: ${carbonPart.toFixed(4)} (${carbonPct.toFixed(1)}%)`}
+                  title={`Carbon: ${carbonPart.toFixed(4)} (${carbonPct.toFixed(1)}%)`}
                 />
                 <div
                   className="bg-blue-500 h-full transition-all duration-300"
                   style={{ width: `${durationPct}%` }}
-                  title={`Duration Subscore: ${durationPart.toFixed(4)} (${durationPct.toFixed(1)}%)`}
+                  title={`Duration: ${durationPart.toFixed(4)} (${durationPct.toFixed(1)}%)`}
                 />
                 <div
                   className="bg-purple-500 h-full transition-all duration-300"
                   style={{ width: `${utilPct}%` }}
-                  title={`Util Subscore: ${utilPart.toFixed(4)} (${utilPct.toFixed(1)}%)`}
+                  title={`Utilization: ${utilPart.toFixed(4)} (${utilPct.toFixed(1)}%)`}
                 />
                 <div
                   className="bg-cyan-500 h-full transition-all duration-300"
                   style={{ width: `${latencyPct}%` }}
-                  title={`Latency Subscore: ${latencyPart.toFixed(4)} (${latencyPct.toFixed(1)}%)`}
+                  title={`Latency: ${latencyPart.toFixed(4)} (${latencyPct.toFixed(1)}%)`}
                 />
               </div>
 
               {/* Raw vs Normalized metrics breakdown */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-800/60 text-[11px] font-mono">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2.5 pt-2 border-t border-slate-800/60 text-[11px] font-mono">
                 <div className="text-slate-400">
                   <span className="text-emerald-400">Emissions:</span> {formatEmissions(rawCarbon, true, true)} &bull; n:{normCarbon.toFixed(2)}
                 </div>

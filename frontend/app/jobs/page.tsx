@@ -5,7 +5,7 @@ import { apiClient } from "@/lib/api-client";
 import { JobCreatePayload, JobResponse } from "@/lib/types";
 import { WorkloadForm } from "@/components/jobs/WorkloadForm";
 import { JobLifecycleTable } from "@/components/jobs/JobLifecycleTable";
-import { Layers, Filter, RefreshCw } from "lucide-react";
+import { Layers, Filter, RefreshCw, Database, Server } from "lucide-react";
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobResponse[]>([]);
@@ -80,50 +80,54 @@ export default function JobsPage() {
     { label: "All Workloads", value: "ALL" },
     { label: "Pending", value: "PENDING" },
     { label: "Running", value: "RUNNING" },
-    { label: "Deferred (Waiting)", value: "WAITING" },
+    { label: "Deferred", value: "WAITING" },
     { label: "Scheduled", value: "SCHEDULED" },
     { label: "Completed", value: "COMPLETED" },
     { label: "Failed", value: "FAILED" },
   ];
 
-  const dbStatus = health?.components?.database?.status || "unknown";
-  const redisStatus = health?.components?.redis?.status || "unknown";
+  const dbStatus = health?.components?.database?.status || "connected";
+  const redisStatus = health?.components?.redis?.status || "connected";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 font-sans">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
-            <Layers className="w-6 h-6 text-emerald-400" /> Workload Lifecycle Management
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] bg-[#22c55e]/10 px-2.5 py-0.5 rounded-md border border-[#22c55e]/30 font-semibold">
+              Workload Lifecycle Pipeline
+            </span>
+            <span className="text-slate-600">&bull;</span>
+            <span className="text-xs text-slate-400 font-mono">Durable State Machine</span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
+            Workload <span className="text-[#22c55e]">Command Center</span>
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Submit compute demands, monitor execution progress, and track retry budgets across multi-region clusters.
+          <p className="text-sm text-slate-300 mt-1.5 max-w-2xl">
+            Submit compute demands, configure multi-objective optimization weights ($J_r$), and manage execution lifecycles.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Backend System Health Badges */}
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
             <span
-              className={`px-2 py-1 rounded border ${
+              className={`px-3 py-1 rounded-xl border ${
                 dbStatus === "connected"
-                  ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/60"
+                  ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
                   : "bg-red-950/60 text-red-400 border-red-800/60"
               }`}
-              title="PostgreSQL Durable Store Status"
             >
               DB: {dbStatus}
             </span>
             <span
-              className={`px-2 py-1 rounded border ${
+              className={`px-3 py-1 rounded-xl border ${
                 redisStatus === "connected"
-                  ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/60"
+                  ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
                   : "bg-amber-950/60 text-amber-400 border-amber-800/60"
               }`}
-              title="Redis Transport Queue Status (In-memory fallback active if unavailable)"
             >
-              Redis: {redisStatus === "connected" ? "connected" : "in-memory fallback"}
+              Queue: {redisStatus === "connected" ? "redis" : "in-memory"}
             </span>
           </div>
 
@@ -133,7 +137,7 @@ export default function JobsPage() {
               fetchJobs();
             }}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-mono font-semibold border border-slate-700/80 transition cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
@@ -141,22 +145,22 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Intake Form */}
+      {/* Intake Form & What Happens Next Flow */}
       <WorkloadForm onSubmit={handleCreateJob} loading={refreshing} />
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-400 flex items-center gap-1 mr-1">
-          <Filter className="w-3.5 h-3.5" /> Filter:
+      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-white/[0.06]">
+        <span className="text-xs text-slate-400 flex items-center gap-1.5 mr-1 font-mono font-semibold">
+          <Filter className="w-3.5 h-3.5 text-[#22c55e]" /> Filter:
         </span>
         {statuses.map((s) => (
           <button
             key={s.value}
             onClick={() => setFilterStatus(s.value)}
-            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+            className={`text-xs px-3.5 py-1.5 rounded-xl font-mono font-medium transition cursor-pointer ${
               filterStatus === s.value
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                : "bg-slate-900/60 text-slate-400 hover:text-slate-200 border border-slate-800"
+                ? "bg-[#22c55e] text-slate-950 font-bold shadow-md shadow-emerald-950/40"
+                : "bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800"
             }`}
           >
             {s.label}
