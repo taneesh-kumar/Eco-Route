@@ -81,9 +81,9 @@ uv run alembic upgrade head
 Populate the 25 global AWS canonical regions with validated Electricity Maps zones and telemetry profiles:
 ```bash
 # In backend/
-uv run python -c "import asyncio; from app.db.session import get_db_sessionmaker; from app.db.seed import seed_default_regions; async def s(): sm = get_db_sessionmaker(); async with sm() as s: await seed_default_regions(s); asyncio.run(s())"
+uv run python -m app.db.seed_cli
 ```
-*(Note: Region seeding also executes automatically on backend lifespan startup).*
+*(Note: To skip external Electricity Maps zone validation during offline seeding, pass `--no-verify-zones`).*
 
 ### C. Backend API Start Command
 ```bash

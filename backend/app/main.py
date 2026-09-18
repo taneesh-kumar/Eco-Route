@@ -9,7 +9,6 @@ from app.api.router import api_router
 from app.api.v1.health import router as health_router
 from app.core.config import get_settings
 from app.core.logging import logger, setup_logging
-from app.db.seed import seed_default_regions
 from app.db.session import close_db_connections, get_db_sessionmaker
 from app.execution.deferral_evaluator import DeferredJobEvaluator
 from app.execution.dispatcher import ExecutionDispatcher
@@ -44,27 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging(settings.LOG_LEVEL)
     logger.info(f"Starting EcoRoute backend in {settings.ENVIRONMENT} mode...")
 
-    # 1. Seed cloud regions if not present
-    try:
-        sessionmaker = get_db_sessionmaker()
-        if sessionmaker:
-            async with sessionmaker() as session:
-                await seed_default_regions(session)
-    except Exception as exc:
-        logger.error(f"Failed to verify/seed default cloud regions on startup: {exc}")
-
-    # 1b. Validate configured Electricity Maps zones (Critical Rule #4)
-    try:
-        from app.carbon.client import ElectricityMapsClient
-        from app.db.seed import DEFAULT_REGIONS
-        em_client = ElectricityMapsClient()
-        if em_client.is_configured:
-            zones_to_verify = list(dict.fromkeys(r["electricity_maps_zone"] for r in DEFAULT_REGIONS if r.get("electricity_maps_zone")))
-            await em_client.validate_all_configured_zones(zones_to_verify)
-    except Exception as exc:
-        logger.error(f"Startup zone validation failed: {exc}")
-
-    # 2. Launch background execution worker, deferral sweep, and dispatcher recovery loop
+    # Launch background execution worker, deferral sweep, and dispatcher recovery loop
     worker = ExecutionWorker(worker_id="backend-worker-01")
     evaluator = DeferredJobEvaluator()
     dispatcher = ExecutionDispatcher()
