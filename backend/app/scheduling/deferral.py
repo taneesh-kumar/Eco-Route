@@ -19,6 +19,9 @@ class DeferralEvaluationResult:
     forecast_source: str = "ELECTRICITY_MAPS"
     forecast_checked_until: Optional[str] = None
     deferral_eligible: bool = False
+    priority: Optional[int] = None
+    priority_class: Optional[str] = None
+    deferral_policy: Optional[str] = None
     current_expected_emissions: Optional[Decimal] = None
     future_expected_emissions: Optional[Decimal] = None
     expected_savings: Optional[Decimal] = None
@@ -36,6 +39,9 @@ class DeferralEvaluationResult:
             "forecast_source": self.forecast_source,
             "forecast_checked_until": self.forecast_checked_until,
             "deferral_eligible": self.deferral_eligible,
+            "priority": self.priority,
+            "priority_class": self.priority_class,
+            "deferral_policy": self.deferral_policy,
             "current_expected_emissions": float(self.current_expected_emissions) if self.current_expected_emissions is not None else None,
             "future_expected_emissions": float(self.future_expected_emissions) if self.future_expected_emissions is not None else None,
             "expected_savings": float(self.expected_savings) if self.expected_savings is not None else None,
@@ -65,6 +71,10 @@ class DeferralEvaluator:
         verified_forecast_jr: Optional[Decimal] = None,
         epsilon: Decimal = Decimal("0.0"),
         deferral_eligible: bool = False,
+        forecast_status_override: Optional[str] = None,
+        job_priority: Optional[int] = None,
+        priority_class: Optional[str] = None,
+        deferral_policy: Optional[str] = None,
         forecast_checked_until: Optional[str] = None,
         current_expected_emissions: Optional[Decimal] = None,
         future_expected_emissions: Optional[Decimal] = None,
@@ -82,19 +92,33 @@ class DeferralEvaluator:
                 verified_forecast_jr=verified_forecast_jr,
                 forecast_status="SLACK_EXHAUSTED",
                 deferral_eligible=False,
+                priority=job_priority,
+                priority_class=priority_class,
+                deferral_policy=deferral_policy,
                 forecast_checked_until=forecast_checked_until,
                 current_expected_emissions=current_expected_emissions,
                 deferral_threshold_pct=deferral_threshold_pct,
             )
 
         if verified_forecast_jr is None:
+            status = forecast_status_override or "NO_USEFUL_FORECAST"
+            if status in ("UNAVAILABLE", "FORECAST_UNAVAILABLE"):
+                status = "FORECAST_UNAVAILABLE"
+                reason = "Electricity Maps carbon forecast is unavailable or untrusted; dispatching best candidate immediately."
+            else:
+                status = "NO_USEFUL_FORECAST"
+                reason = "No useful forecast window satisfies the required savings threshold; dispatching best candidate immediately."
+
             return DeferralEvaluationResult(
                 action=DecisionAction.EXECUTE,
-                reason="No verified future carbon forecast available; dispatching best candidate immediately.",
+                reason=reason,
                 slack_seconds=slack.slack_seconds,
                 verified_forecast_jr=None,
-                forecast_status="NO_USEFUL_FORECAST",
+                forecast_status=status,
                 deferral_eligible=deferral_eligible,
+                priority=job_priority,
+                priority_class=priority_class,
+                deferral_policy=deferral_policy,
                 forecast_checked_until=forecast_checked_until,
                 current_expected_emissions=current_expected_emissions,
                 deferral_threshold_pct=deferral_threshold_pct,
@@ -106,13 +130,16 @@ class DeferralEvaluator:
             return DeferralEvaluationResult(
                 action=DecisionAction.DEFER,
                 reason=(
-                    f"Deferral approved: verified forecast Jr ({verified_forecast_jr}) is lower than "
-                    f"current Jr ({current_best_jr}) - epsilon ({epsilon}); positive slack available ({slack.slack_seconds}s)."
+                    f"Deferral approved: verified forecast Jr ({verified_forecast_jr}) provides ≥{deferral_threshold_pct or 15.0}% "
+                    f"emissions improvement over immediate execution; positive slack available ({slack.slack_seconds}s)."
                 ),
                 slack_seconds=slack.slack_seconds,
                 verified_forecast_jr=verified_forecast_jr,
-                forecast_status="DEFERRAL_APPROVED",
+                forecast_status="OPPORTUNITY_FOUND",
                 deferral_eligible=True,
+                priority=job_priority,
+                priority_class=priority_class,
+                deferral_policy=deferral_policy,
                 forecast_checked_until=forecast_checked_until,
                 current_expected_emissions=current_expected_emissions,
                 future_expected_emissions=future_expected_emissions,
@@ -125,13 +152,16 @@ class DeferralEvaluator:
         return DeferralEvaluationResult(
             action=DecisionAction.EXECUTE,
             reason=(
-                f"Immediate execution preferred: verified forecast Jr ({verified_forecast_jr}) does not satisfy "
+                f"Immediate execution preferred: verified forecast does not satisfy "
                 f"deferral threshold (current Jr {current_best_jr} - epsilon {epsilon})."
             ),
             slack_seconds=slack.slack_seconds,
             verified_forecast_jr=verified_forecast_jr,
-            forecast_status="THRESHOLD_NOT_MET",
+            forecast_status="NO_USEFUL_FORECAST",
             deferral_eligible=deferral_eligible,
+            priority=job_priority,
+            priority_class=priority_class,
+            deferral_policy=deferral_policy,
             forecast_checked_until=forecast_checked_until,
             current_expected_emissions=current_expected_emissions,
             future_expected_emissions=future_expected_emissions,

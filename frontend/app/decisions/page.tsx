@@ -91,7 +91,7 @@ function DecisionsContent() {
             <Cpu className="w-6 h-6 text-emerald-400" /> Decision Explainability Center
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Auditable mathematical decomposition: candidate region ranking, multi-objective subscores, and zero-carbon provenance.
+            Auditable mathematical decomposition: candidate region ranking, multi-objective subscores, and carbon-intensity provenance.
           </p>
         </div>
 

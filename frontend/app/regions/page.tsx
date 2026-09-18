@@ -68,7 +68,7 @@ export default function RegionsPage() {
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">
-              Zero-Carbon Fabrication Policy Enforced
+              Zero Data Fabrication Policy Enforced
             </h3>
             <p className="text-xs text-slate-300 mt-0.5">
               Only verified live telemetry and fresh cache entries qualify as trustworthy. When grid telemetry is unavailable, carbon intensity is strictly set to <span className="font-mono text-emerald-400">NULL</span>.

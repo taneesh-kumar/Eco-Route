@@ -94,7 +94,7 @@ export function Sidebar() {
       {/* System Status Footer */}
       <div className="p-4 border-t border-slate-800/80 bg-slate-900/30">
         <div className="flex items-center justify-between text-xs mb-2">
-          <span className="text-slate-400">Zero-Carbon Policy</span>
+          <span className="text-slate-400">Zero-Fabrication Policy</span>
           <span className="text-emerald-400 font-medium">Strict Enforced</span>
         </div>
         <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">

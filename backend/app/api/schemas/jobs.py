@@ -77,19 +77,34 @@ class JobResponse(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def sanitize_attributes(cls, data: Any) -> Any:
+        for attr in ("assigned_region_id", "assigned_region_code"):
+            if not isinstance(data, dict) and hasattr(data, attr):
+                val = getattr(data, attr)
+                if not (isinstance(val, (str, uuid.UUID)) or val is None):
+                    try:
+                        setattr(data, attr, None)
+                    except Exception:
+                        pass
+            elif isinstance(data, dict) and attr in data:
+                val = data.get(attr)
+                if not (isinstance(val, (str, uuid.UUID)) or val is None):
+                    data[attr] = None
+
         pri_val = None
         if isinstance(data, dict):
             pri_val = data.get("priority")
             assigned_reg = data.get("assigned_region")
-            if assigned_reg and hasattr(assigned_reg, "code"):
+            if assigned_reg and hasattr(assigned_reg, "code") and isinstance(assigned_reg.code, str):
                 data["assigned_region_code"] = assigned_reg.code
-            elif isinstance(assigned_reg, dict) and "code" in assigned_reg:
+            elif isinstance(assigned_reg, dict) and "code" in assigned_reg and isinstance(assigned_reg["code"], str):
                 data["assigned_region_code"] = assigned_reg["code"]
         else:
             if hasattr(data, "priority"):
                 pri_val = getattr(data, "priority")
             if hasattr(data, "assigned_region") and getattr(data, "assigned_region"):
-                setattr(data, "assigned_region_code", getattr(data, "assigned_region").code)
+                reg = getattr(data, "assigned_region")
+                if hasattr(reg, "code") and isinstance(reg.code, str):
+                    setattr(data, "assigned_region_code", reg.code)
 
         if pri_val is not None:
             try:

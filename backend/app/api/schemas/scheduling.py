@@ -21,6 +21,7 @@ class SelectedCandidateSnapshot(BaseModel):
     carbon_estimation_method: Optional[str] = None
     carbon_observed_at: Optional[datetime] = None
     carbon_cache_age_seconds: Optional[int] = None
+    carbon_max_cache_age_seconds: Optional[int] = 300
     energy_kwh: Optional[Decimal] = None
     estimated_emissions_co2eq_grams: Optional[Decimal] = None
     duration_seconds: Optional[Decimal] = None
@@ -36,6 +37,9 @@ class StructuredDeferralInfo(BaseModel):
     forecast_checked_until: Optional[str] = None
     deferral_eligible: bool = False
     deferral_reason: str = ""
+    priority: Optional[int] = None
+    priority_class: Optional[str] = None
+    deferral_policy: Optional[str] = None
     current_expected_emissions: Optional[Decimal] = None
     future_expected_emissions: Optional[Decimal] = None
     expected_savings: Optional[Decimal] = None
@@ -101,32 +105,41 @@ class DecisionResponse(BaseModel):
         score_breakdown = {}
         candidate_rankings = []
         if isinstance(data, dict):
-            score_breakdown = data.get("score_breakdown") or {}
-            candidate_rankings = data.get("candidate_rankings") or []
+            sb_raw = data.get("score_breakdown")
+            if isinstance(sb_raw, dict):
+                score_breakdown = sb_raw
+            cr_raw = data.get("candidate_rankings")
+            if isinstance(cr_raw, list):
+                candidate_rankings = cr_raw
         else:
             if hasattr(data, "score_breakdown"):
-                score_breakdown = getattr(data, "score_breakdown") or {}
+                sb_raw = getattr(data, "score_breakdown", None)
+                if isinstance(sb_raw, dict):
+                    score_breakdown = sb_raw
             if hasattr(data, "candidate_rankings"):
-                candidate_rankings = getattr(data, "candidate_rankings") or []
+                cr_raw = getattr(data, "candidate_rankings", None)
+                if isinstance(cr_raw, list):
+                    candidate_rankings = cr_raw
 
         # 1. Authoritative selected_candidate snapshot
-        cand_snap = (
-            (data.get("selected_candidate") if isinstance(data, dict) else getattr(data, "selected_candidate", None))
-            or score_breakdown.get("selected_candidate")
-        )
+        cand_snap = None
+        raw_cand = (data.get("selected_candidate") if isinstance(data, dict) else getattr(data, "selected_candidate", None)) or score_breakdown.get("selected_candidate")
+        if isinstance(raw_cand, (dict, SelectedCandidateSnapshot)):
+            cand_snap = raw_cand
+
         if not cand_snap:
             # Fallback discovery from candidate_rankings
             sel_id = data.get("selected_region_id") if isinstance(data, dict) else getattr(data, "selected_region_id", None)
             found = None
             if sel_id and candidate_rankings:
                 for c in candidate_rankings:
-                    if str(c.get("region_id")) == str(sel_id):
+                    if isinstance(c, dict) and str(c.get("region_id")) == str(sel_id):
                         found = c
                         break
-            if not found and candidate_rankings and len(candidate_rankings) > 0 and candidate_rankings[0].get("is_feasible"):
+            if not found and candidate_rankings and len(candidate_rankings) > 0 and isinstance(candidate_rankings[0], dict) and candidate_rankings[0].get("is_feasible"):
                 found = candidate_rankings[0]
 
-            if found:
+            if found and isinstance(found, dict):
                 raw_ci = found.get("carbon_intensity_gco2") or found.get("carbon_intensity")
                 raw_qual = found.get("carbon_quality") or (data.get("carbon_quality_used") if isinstance(data, dict) else getattr(data, "carbon_quality_used", "LIVE"))
                 raw_src = found.get("carbon_source") or (data.get("carbon_source_used") if isinstance(data, dict) else getattr(data, "carbon_source_used", "ELECTRICITY_MAPS"))
@@ -156,31 +169,47 @@ class DecisionResponse(BaseModel):
             if isinstance(data, dict):
                 data["selected_candidate"] = cand_snap
                 # Exact projection of selected_candidate to convenience top-level fields
-                data["selected_region_id"] = _get_val(cand_snap, "selected_region_id")
-                data["estimated_energy_kwh"] = _get_val(cand_snap, "energy_kwh")
-                data["estimated_co2eq_grams"] = _get_val(cand_snap, "estimated_emissions_co2eq_grams")
-                data["cost_score_jr"] = _get_val(cand_snap, "composite_score")
-                data["carbon_source_used"] = _get_val(cand_snap, "carbon_source", "UNAVAILABLE")
-                data["carbon_quality_used"] = _get_val(cand_snap, "carbon_quality", "UNAVAILABLE")
+                if _get_val(cand_snap, "selected_region_id") is not None:
+                    data["selected_region_id"] = _get_val(cand_snap, "selected_region_id")
+                if _get_val(cand_snap, "energy_kwh") is not None:
+                    data["estimated_energy_kwh"] = _get_val(cand_snap, "energy_kwh")
+                if _get_val(cand_snap, "estimated_emissions_co2eq_grams") is not None:
+                    data["estimated_co2eq_grams"] = _get_val(cand_snap, "estimated_emissions_co2eq_grams")
+                if _get_val(cand_snap, "composite_score") is not None:
+                    data["cost_score_jr"] = _get_val(cand_snap, "composite_score")
+                if _get_val(cand_snap, "carbon_source") is not None:
+                    data["carbon_source_used"] = _get_val(cand_snap, "carbon_source", "UNAVAILABLE")
+                if _get_val(cand_snap, "carbon_quality") is not None:
+                    data["carbon_quality_used"] = _get_val(cand_snap, "carbon_quality", "UNAVAILABLE")
             else:
                 setattr(data, "selected_candidate", cand_snap)
-                setattr(data, "selected_region_id", _get_val(cand_snap, "selected_region_id"))
-                setattr(data, "estimated_energy_kwh", _get_val(cand_snap, "energy_kwh"))
-                setattr(data, "estimated_co2eq_grams", _get_val(cand_snap, "estimated_emissions_co2eq_grams"))
-                setattr(data, "cost_score_jr", _get_val(cand_snap, "composite_score"))
-                setattr(data, "carbon_source_used", _get_val(cand_snap, "carbon_source", "UNAVAILABLE"))
-                setattr(data, "carbon_quality_used", _get_val(cand_snap, "carbon_quality", "UNAVAILABLE"))
+                if _get_val(cand_snap, "selected_region_id") is not None:
+                    setattr(data, "selected_region_id", _get_val(cand_snap, "selected_region_id"))
+                if _get_val(cand_snap, "energy_kwh") is not None:
+                    setattr(data, "estimated_energy_kwh", _get_val(cand_snap, "energy_kwh"))
+                if _get_val(cand_snap, "estimated_emissions_co2eq_grams") is not None:
+                    setattr(data, "estimated_co2eq_grams", _get_val(cand_snap, "estimated_emissions_co2eq_grams"))
+                if _get_val(cand_snap, "composite_score") is not None:
+                    setattr(data, "cost_score_jr", _get_val(cand_snap, "composite_score"))
+                if _get_val(cand_snap, "carbon_source") is not None:
+                    setattr(data, "carbon_source_used", _get_val(cand_snap, "carbon_source", "UNAVAILABLE"))
+                if _get_val(cand_snap, "carbon_quality") is not None:
+                    setattr(data, "carbon_quality_used", _get_val(cand_snap, "carbon_quality", "UNAVAILABLE"))
+        else:
+            if not isinstance(data, dict):
+                setattr(data, "selected_candidate", None)
 
         # 2. Structured deferral_info
-        def_info = (
-            (data.get("deferral_info") if isinstance(data, dict) else getattr(data, "deferral_info", None))
-            or score_breakdown.get("deferral_info")
-        )
+        def_info = None
+        raw_def = (data.get("deferral_info") if isinstance(data, dict) else getattr(data, "deferral_info", None)) or score_breakdown.get("deferral_info")
+        if isinstance(raw_def, (dict, StructuredDeferralInfo)):
+            def_info = raw_def
+
         if not def_info:
-            d_reason = data.get("decision_reason", "") if isinstance(data, dict) else getattr(data, "decision_reason", "")
-            d_action = data.get("decision_action", "EXECUTE") if isinstance(data, dict) else getattr(data, "decision_action", "EXECUTE")
+            d_reason = data.get("decision_reason", "") if isinstance(data, dict) else (getattr(data, "decision_reason", "") if isinstance(getattr(data, "decision_reason", ""), str) else "")
+            d_action = data.get("decision_action", "EXECUTE") if isinstance(data, dict) else (getattr(data, "decision_action", "EXECUTE") if isinstance(getattr(data, "decision_action", "EXECUTE"), str) else "EXECUTE")
             def_info = {
-                "forecast_status": "NO_USEFUL_FORECAST" if d_action == "EXECUTE" else "DEFERRAL_APPROVED",
+                "forecast_status": "NO_USEFUL_FORECAST" if d_action == "EXECUTE" else "OPPORTUNITY_FOUND",
                 "forecast_source": "ELECTRICITY_MAPS",
                 "deferral_eligible": False,
                 "deferral_reason": d_reason,

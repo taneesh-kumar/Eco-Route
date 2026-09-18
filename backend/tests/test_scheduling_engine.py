@@ -189,3 +189,143 @@ class TestSchedulingEngine:
             await engine.schedule(job=tight_job, candidate_regions=[tiny_region])
 
         assert tight_job.status == JobStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_score_correctness_and_jr_recalculation(self, sample_job, sample_regions):
+        """Item 7: Verify all score components come from the same snapshot and Jr recalculates identically."""
+        mock_carbon_service = AsyncMock(spec=CarbonService)
+        mock_carbon_service.get_carbon_intensity.side_effect = [
+            CarbonIntensity(CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("250.0")),
+            CarbonIntensity(CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("100.0")),
+        ]
+
+        engine = DecisionEngine(carbon_service=mock_carbon_service)
+        decision = await engine.schedule(
+            job=sample_job,
+            candidate_regions=sample_regions,
+            variant=SchedulerVariant.ECOROUTE,
+        )
+
+        assert decision.decision_action == DecisionAction.EXECUTE
+        rankings = decision.candidate_rankings
+        assert len(rankings) == 2
+        winner_rank = rankings[0]
+        snap = decision.score_breakdown["selected_candidate"]
+
+        # Assert selected candidate snapshot matches rank 1 candidate
+        assert snap["selected_region_code"] == winner_rank["region_code"]
+        assert snap["composite_score"] == winner_rank["composite_score"]
+
+        # Recalculate Jr independently from weights and normalized components
+        weights = decision.applied_weights
+        norm_c = Decimal(str(winner_rank["norm_carbon"]))
+        norm_d = Decimal(str(winner_rank["norm_duration"]))
+        norm_u = Decimal(str(winner_rank["norm_utilization"]))
+        norm_l = Decimal(str(winner_rank["norm_latency"]))
+
+        recalculated_jr = (
+            weights.carbon * norm_c
+            + weights.time * norm_d
+            + weights.utilization * norm_u
+            + weights.latency * norm_l
+        )
+
+        assert Decimal(str(snap["composite_score"])) == recalculated_jr
+        assert Decimal(str(winner_rank["cost_score_jr"])) == recalculated_jr
+
+    @pytest.mark.asyncio
+    async def test_region_selection_changes_with_weights_and_telemetry(self, sample_job):
+        """Item 8: Verify winning region changes deterministically when weights shift."""
+        # Region A: High carbon (400), Low latency (5ms), fast execution (perf 2.0)
+        reg_a = Region(
+            code="reg-fast-dirty",
+            name="Fast Dirty Region",
+            provider="AWS",
+            max_cpu_capacity=Decimal("32.0"),
+            max_memory_capacity=Decimal("128.0"),
+            performance_factor=Decimal("2.0"),
+            current_utilization=Decimal("0.10"),
+            network_latency_ms=Decimal("5.0"),
+        )
+        # Region B: Low carbon (50), High latency (80ms), slower execution (perf 0.8)
+        reg_b = Region(
+            code="reg-slow-clean",
+            name="Slow Clean Region",
+            provider="AWS",
+            max_cpu_capacity=Decimal("32.0"),
+            max_memory_capacity=Decimal("128.0"),
+            performance_factor=Decimal("0.8"),
+            current_utilization=Decimal("0.10"),
+            network_latency_ms=Decimal("80.0"),
+        )
+        regions = [reg_a, reg_b]
+
+        mock_carbon_service = AsyncMock(spec=CarbonService)
+        mock_carbon_service.get_carbon_intensity.side_effect = [
+            CarbonIntensity(CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("400.0")),
+            CarbonIntensity(CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("50.0")),
+            CarbonIntensity(CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("400.0")),
+            CarbonIntensity(CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("50.0")),
+        ]
+
+        engine = DecisionEngine(carbon_service=mock_carbon_service)
+
+        # 1. Carbon-only variant -> reg-slow-clean must win
+        dec_carbon = await engine.schedule(
+            job=sample_job,
+            candidate_regions=regions,
+            variant=SchedulerVariant.CARBON_ONLY,
+        )
+        assert dec_carbon.selected_region_id == reg_b.id
+
+        # 2. Performance-only variant -> reg-fast-dirty must win
+        job_perf = Job(
+            workload_name="genomic-batch-102",
+            workload_type="BATCH",
+            demand=sample_job.demand,
+            priority=sample_job.priority,
+            deadline=sample_job.deadline,
+        )
+        dec_perf = await engine.schedule(
+            job=job_perf,
+            candidate_regions=regions,
+            variant=SchedulerVariant.PERFORMANCE_ONLY,
+        )
+        assert dec_perf.selected_region_id == reg_a.id
+
+    @pytest.mark.asyncio
+    async def test_deferral_status_and_priority_policies(self):
+        """Item 1, 2, 3: Verify forecast status distinction and priority mapping."""
+        now = datetime.now(timezone.utc)
+        demand = WorkloadDemand(Decimal("2.0"), Decimal("8.0"), Decimal("100.0"))
+        region = Region(
+            code="reg-1",
+            name="Region 1",
+            provider="AWS",
+            max_cpu_capacity=Decimal("16.0"),
+            max_memory_capacity=Decimal("64.0"),
+            network_latency_ms=Decimal("10.0"),
+        )
+
+        # High priority job (priority 2) -> no deferral
+        high_job = Job(
+            workload_name="high-pri-job",
+            workload_type="BATCH",
+            demand=demand,
+            priority=JobPriority(2),
+            deadline=now + timedelta(seconds=3600),
+        )
+
+        mock_carbon_service = AsyncMock(spec=CarbonService)
+        mock_carbon_service.get_carbon_intensity.return_value = CarbonIntensity(
+            CarbonQuality.LIVE, CarbonSource.ELECTRICITY_MAPS, Decimal("200.0")
+        )
+
+        engine = DecisionEngine(carbon_service=mock_carbon_service)
+        dec_high = await engine.schedule(job=high_job, candidate_regions=[region])
+
+        assert dec_high.decision_action == DecisionAction.EXECUTE
+        def_info_high = dec_high.score_breakdown["deferral_info"]
+        assert def_info_high["priority_class"] == "HIGH"
+        assert "Ineligible (HIGH" in def_info_high["deferral_policy"]
+        assert def_info_high["deferral_eligible"] is False

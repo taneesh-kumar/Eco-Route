@@ -79,7 +79,7 @@ export default function AnalyticsPage() {
             <Leaf className="w-4 h-4 text-emerald-400" /> Carbon Footprint Accounting
           </h3>
           <p className="text-xs text-slate-400 leading-relaxed font-sans">
-            Zero-carbon fabrication guarantees that only verified, trustworthy grid telemetry contributes to recorded emissions:
+            Zero-fabrication policy guarantees that only verified, trustworthy grid telemetry contributes to recorded emissions:
           </p>
           <div className="p-3 rounded bg-slate-900/80 font-mono text-xs text-slate-300 border border-slate-800">
             If CI is trustworthy: CO₂ (g) = Energy (kWh) &times; CI (gCO₂/kWh)

@@ -118,6 +118,15 @@ class DecisionEngine:
             # Handle empty feasible pool using finalized slack condition
             slack_empty = job.calculate_slack(current_time=now)
             action, empty_reason = DeferralEvaluator.evaluate_empty_feasible_pool(slack_empty)
+            status_empty = "NO_FEASIBLE_CANDIDATES"
+
+            logger.warning(
+                "[DECISION_DIAGNOSTIC] Job %s has zero feasible regions. Slack: %ss. Status: %s. Reason: %s",
+                job.id,
+                slack_empty.slack_seconds,
+                status_empty,
+                empty_reason,
+            )
 
             if action == DecisionAction.DEFER:
                 job.transition_to(JobStatus.WAITING)
@@ -130,7 +139,16 @@ class DecisionEngine:
                     carbon_source_used=CarbonSource.ELECTRICITY_MAPS,
                     carbon_quality_used=CarbonQuality.UNAVAILABLE,
                     decision_reason=empty_reason,
-                    score_breakdown={"infeasible_regions": infeasible_log},
+                    score_breakdown={
+                        "infeasible_regions": infeasible_log,
+                        "deferral_info": {
+                            "action": "DEFER",
+                            "reason": empty_reason,
+                            "slack_seconds": float(slack_empty.slack_seconds),
+                            "forecast_status": status_empty,
+                            "deferral_eligible": False,
+                        },
+                    },
                     candidate_rankings=[],
                     applied_weights=get_scheduler_strategy(variant).get_effective_weights(False),
                     selected_region_id=None,
@@ -249,33 +267,101 @@ class DecisionEngine:
         found_rel_imp = None
         found_forecast_ts = None
 
+        p_val = job.priority.value
+        p_class = job.priority.priority_class
+        if p_class == "HIGH":
+            deferral_policy = "Ineligible (HIGH - Urgent SLA)"
+        elif p_class == "MEDIUM":
+            deferral_policy = "Eligible (MEDIUM - Balanced SLA)"
+        else:
+            deferral_policy = "Eligible (LOW - Flexible SLA)"
+
+        curr_emiss = winning_candidate.estimate.emissions_co2eq
+        target_cap = curr_emiss * threshold_ratio if curr_emiss is not None else None
+
+        logger.info(
+            "[DECISION_DIAGNOSTIC] Job %s (%s, Priority %s %s) | Deadline: %s | Slack: %ss | Best Candidate: %s (CI: %s gCO2eq/kWh, Dur: %ss, Energy: %s kWh, Emiss: %s gCO2eq) | Deferral Eligible: %s (Policy: %s)",
+            job.id,
+            job.workload_type,
+            p_val,
+            p_class,
+            job.deadline.isoformat(),
+            slack.slack_seconds,
+            winning_candidate.region.code,
+            winning_candidate.carbon.value,
+            winning_candidate.estimate.duration_seconds,
+            winning_candidate.estimate.energy_kwh,
+            curr_emiss,
+            deferral_eligible,
+            deferral_policy,
+        )
+
         active_forecast_jr = verified_forecast_jr
-        if active_forecast_jr is None and deferral_eligible:
+        forecast_status_code = "NO_USEFUL_FORECAST"
+        if not carbon_available:
+            forecast_status_code = "FORECAST_UNAVAILABLE"
+        elif active_forecast_jr is None and deferral_eligible:
             try:
+                found_pts_in_api = False
+                pts_in_window_count = 0
                 for reg in feasible_regions:
                     pts = await self.carbon_service.get_forecast(reg)
                     if pts:
+                        found_pts_in_api = True
                         reg_est = estimates[reg.id]
                         dur_sec = float(reg_est.duration_seconds)
                         for pt in pts:
                             proj_completion = pt.timestamp + timedelta(seconds=dur_sec)
                             if pt.timestamp > now and proj_completion <= job.deadline:
-                                curr_emiss = winning_candidate.estimate.emissions_co2eq
+                                pts_in_window_count += 1
                                 if curr_emiss is not None and curr_emiss > Decimal("0"):
                                     future_emiss = reg_est.energy_kwh * pt.carbon_intensity
                                     diff = curr_emiss - future_emiss
                                     rel_imp = (diff / curr_emiss) * Decimal("100")
-                                    if future_emiss < curr_emiss * threshold_ratio:
+                                    if future_emiss < target_cap:
                                         active_forecast_jr = Decimal("0.01")
                                         found_future_emiss = future_emiss
                                         found_savings = diff
                                         found_rel_imp = rel_imp
                                         found_forecast_ts = pt.timestamp.isoformat()
+                                        forecast_status_code = "OPPORTUNITY_FOUND"
+                                        logger.info(
+                                            "[DECISION_DIAGNOSTIC] Forecast opportunity identified in region %s (zone %s) at %s: CI=%s gCO2eq/kWh, FutureEmiss=%s gCO2eq (Savings=%s%% >= %s%% threshold)",
+                                            reg.code,
+                                            self.carbon_service.resolve_zone_code(reg),
+                                            found_forecast_ts,
+                                            pt.carbon_intensity,
+                                            future_emiss,
+                                            rel_imp,
+                                            deferral_threshold_pct,
+                                        )
                                         break
                     if active_forecast_jr is not None:
                         break
+
+                if not found_pts_in_api and active_forecast_jr is None:
+                    forecast_status_code = "FORECAST_UNAVAILABLE"
+                    logger.info(
+                        "[DECISION_DIAGNOSTIC] Forecast API returned zero forecast points across candidate regions. Status: FORECAST_UNAVAILABLE"
+                    )
+                elif pts_in_window_count == 0 and active_forecast_jr is None:
+                    logger.info(
+                        "[DECISION_DIAGNOSTIC] Forecast points exist outside deadline, but zero points fell inside deferral window [%s, %s]. Status: NO_USEFUL_FORECAST",
+                        now.isoformat(),
+                        forecast_checked_until,
+                    )
+                elif active_forecast_jr is None:
+                    logger.info(
+                        "[DECISION_DIAGNOSTIC] Checked %d forecast points inside deferral window [%s, %s]; none satisfied >= %s%% savings threshold (target cap < %s gCO2eq). Status: NO_USEFUL_FORECAST",
+                        pts_in_window_count,
+                        now.isoformat(),
+                        forecast_checked_until,
+                        deferral_threshold_pct,
+                        target_cap,
+                    )
             except Exception as exc:
-                logger.debug("Forecast opportunity check passed without match: %s", exc)
+                logger.warning("[DECISION_DIAGNOSTIC] Forecast query error: %s. Falling back to FORECAST_UNAVAILABLE.", exc)
+                forecast_status_code = "FORECAST_UNAVAILABLE"
 
         deferral_res = DeferralEvaluator.evaluate_with_candidates(
             slack=slack,
@@ -283,6 +369,10 @@ class DecisionEngine:
             verified_forecast_jr=active_forecast_jr,
             epsilon=eff_epsilon,
             deferral_eligible=deferral_eligible,
+            forecast_status_override=forecast_status_code,
+            job_priority=p_val,
+            priority_class=p_class,
+            deferral_policy=deferral_policy,
             forecast_checked_until=forecast_checked_until,
             current_expected_emissions=winning_candidate.estimate.emissions_co2eq,
             future_expected_emissions=found_future_emiss,
@@ -317,6 +407,16 @@ class DecisionEngine:
             job.transition_to(JobStatus.WAITING)
             selected_region_id = None
 
+        logger.info(
+            "[DECISION_DIAGNOSTIC] Final Decision for Job %s: Action=%s | ForecastStatus=%s | DecisionMode=%s | SelectedRegion=%s | Reason=%s",
+            job.id,
+            deferral_res.action.value,
+            deferral_res.forecast_status,
+            decision_mode,
+            winning_candidate.region.code if deferral_res.action == DecisionAction.EXECUTE else "NONE (DEFERRED)",
+            deferral_res.reason,
+        )
+
         # Stage 11: Construct Domain SchedulingDecision
         rankings_payload = [c.to_dict() for c in ranked_candidates]
         for inf in infeasible_log:
@@ -348,10 +448,15 @@ class DecisionEngine:
             "carbon_estimation_method": winning_candidate.carbon.estimation_method or ("Electricity Maps Live Model" if winning_candidate.carbon.is_estimated else None),
             "carbon_observed_at": winning_candidate.carbon.observed_at.isoformat() if winning_candidate.carbon.observed_at else None,
             "carbon_cache_age_seconds": (
-                int((now - winning_candidate.carbon.received_at).total_seconds())
-                if winning_candidate.carbon.received_at
-                else None
+                winning_candidate.carbon.cache_age_seconds
+                if winning_candidate.carbon.cache_age_seconds is not None
+                else (
+                    int((now - winning_candidate.carbon.received_at).total_seconds())
+                    if winning_candidate.carbon.received_at
+                    else None
+                )
             ),
+            "carbon_max_cache_age_seconds": settings.CARBON_CACHE_MAX_AGE_SECONDS,
             "energy_kwh": str(winning_candidate.estimate.energy_kwh),
             "estimated_emissions_co2eq_grams": (
                 str(winning_candidate.estimate.emissions_co2eq)

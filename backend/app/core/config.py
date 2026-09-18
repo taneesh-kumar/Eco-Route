@@ -50,7 +50,12 @@ class Settings(BaseSettings):
     # Deferral Policy Parameters
     CARBON_DEFERRAL_MIN_RELATIVE_IMPROVEMENT: float = Field(
         default=0.15,
-        description="Minimum relative carbon emissions improvement (0.15 = 15.0%) required to approve deferral",
+        description=(
+            "Minimum relative carbon emissions improvement (0.15 = 15.0%) required to approve deferral "
+            "(Unit: fractional ratio [0.0 - 1.0]). Rationale: Workloads only defer execution if a future "
+            "forecast point provides at least 15% lower carbon emissions than immediate execution (E_future < E_current * 0.85), "
+            "avoiding unnecessary queueing latency for marginal carbon differences."
+        ),
     )
     CARBON_DEFERRAL_EPSILON: float = Field(
         default=0.0,

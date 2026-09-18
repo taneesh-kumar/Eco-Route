@@ -1,5 +1,7 @@
 import pytest
+from httpx import ASGITransport, AsyncClient
 from app.core.config import Settings, get_settings
+from app.main import create_app
 
 
 def test_default_settings():
@@ -38,3 +40,23 @@ def test_get_settings_caching():
     s1 = get_settings()
     s2 = get_settings()
     assert s1 is s2
+
+
+@pytest.mark.asyncio
+async def test_dev_cors_allows_loopback_dev_server_ports(monkeypatch):
+    settings = Settings(_env_file=None, ENVIRONMENT="development")
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    app = create_app()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.options(
+            "/api/v1/health",
+            headers={
+                "Origin": "http://localhost:3002",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3002"

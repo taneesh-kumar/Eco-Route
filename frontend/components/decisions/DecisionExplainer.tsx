@@ -3,7 +3,7 @@
 import { SchedulingDecisionResponse } from "@/lib/types";
 import { CarbonBadge } from "@/components/regions/CarbonBadge";
 import { SubscoreBreakdown } from "./SubscoreBreakdown";
-import { formatEmissions, formatCarbonIntensity } from "@/lib/utils";
+import { formatEmissions, formatEmissionsComparison, formatCarbonIntensity } from "@/lib/utils";
 import {
   Cpu,
   CheckCircle2,
@@ -76,7 +76,66 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
   const baselineStrategy = decision.baseline_strategy || "CONVENTIONAL";
   const baselineEnergy = decision.baseline_energy_kwh;
   const baselineCo2 = decision.baseline_co2eq_grams;
+  const ecorouteCo2 = decision.estimated_co2eq_grams ?? sel?.estimated_emissions_co2eq_grams ?? null;
   const savingsCo2 = decision.estimated_savings_co2eq_grams;
+
+  // Use uniform unit across all 3 comparison values (never mix g and mg)
+  const comparison = formatEmissionsComparison(baselineCo2, ecorouteCo2, savingsCo2, true);
+
+  const priorityClass = defInfo?.priority_class || (defInfo?.priority != null ? (defInfo.priority <= 3 ? "HIGH" : defInfo.priority <= 7 ? "MEDIUM" : "LOW") : null);
+  const deferralPolicyText = defInfo?.deferral_policy || (
+    priorityClass === "HIGH"
+      ? "Ineligible (HIGH - Urgent SLA)"
+      : priorityClass === "MEDIUM"
+      ? (defInfo?.deferral_eligible ? "Eligible (MEDIUM - Balanced SLA)" : "Ineligible (MEDIUM - Tight Slack)")
+      : priorityClass === "LOW"
+      ? "Eligible (LOW - Flexible SLA)"
+      : defInfo?.deferral_eligible
+      ? "Eligible (Carbon Deferral Enabled)"
+      : "Direct Execution (Urgent SLA)"
+  );
+
+  const getForecastStatusBadge = (status: string) => {
+    switch (status) {
+      case "OPPORTUNITY_FOUND":
+      case "DEFERRAL_APPROVED":
+        return {
+          bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+          label: "OPPORTUNITY_FOUND",
+          desc: "Future grid window provides ≥15.0% carbon savings within SLA slack window.",
+        };
+      case "NO_USEFUL_FORECAST":
+      case "THRESHOLD_NOT_MET":
+        return {
+          bg: "bg-slate-800 text-slate-300 border-slate-700",
+          label: "NO_USEFUL_FORECAST",
+          desc: "Forecast telemetry available, but no future window satisfies the ≥15.0% savings threshold.",
+        };
+      case "UNAVAILABLE":
+        return {
+          bg: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+          label: "UNAVAILABLE",
+          desc: "Electricity Maps forecast telemetry could not be obtained or trusted for candidate regions.",
+        };
+      case "SLACK_EXHAUSTED":
+        return {
+          bg: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+          label: "SLACK_EXHAUSTED",
+          desc: "Workload deadline prevents safe deferral; dispatched immediately to prevent SLA breach.",
+        };
+      default:
+        return {
+          bg: "bg-slate-800 text-slate-300 border-slate-700",
+          label: status,
+          desc: "Evaluated under standard execution gating policy.",
+        };
+    }
+  };
+
+  const isCacheDecision = carbonSource === "CACHE" || carbonQuality === "CACHE_VALID" || carbonQuality === "VALID_CACHE";
+  const cacheAge = sel?.carbon_cache_age_seconds ?? 0;
+  const maxCacheAge = sel?.carbon_max_cache_age_seconds ?? 300;
+  const isCacheFresh = cacheAge <= maxCacheAge;
 
   const getActionStyles = () => {
     switch (action) {
@@ -118,6 +177,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
   const actionStyle = getActionStyles();
   const ActionIcon = actionStyle.icon;
+  const forecastBadge = defInfo ? getForecastStatusBadge(defInfo.forecast_status) : null;
 
   return (
     <div className="rounded-xl bg-[#0e1424] border border-slate-800/80 p-6 space-y-6 shadow-md font-sans">
@@ -184,13 +244,35 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
         </div>
       </div>
 
+      {/* Explicit Cache Provenance Card for CACHE Decisions */}
+      {isCacheDecision && (
+        <div className="p-3.5 rounded-lg bg-cyan-950/20 border border-cyan-500/30 text-cyan-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Clock className="w-4 h-4 text-cyan-400 shrink-0" />
+            <div>
+              <span className="font-semibold text-cyan-300 font-mono">Carbon Provenance (CACHE):</span>{" "}
+              <span className="font-mono text-slate-300">
+                Source: <strong className="text-cyan-400">CACHE</strong> &bull; Quality: <strong className="text-cyan-400">CACHE_VALID</strong>
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 font-mono text-[11px]">
+            <span>Observed At: {sel?.carbon_observed_at ? new Date(sel.carbon_observed_at).toLocaleTimeString() : "Recent"}</span>
+            <span className="text-slate-500">&bull;</span>
+            <span className={isCacheFresh ? "text-cyan-300" : "text-amber-400"}>
+              Cache Age: {cacheAge}s / Max: {maxCacheAge}s {isCacheFresh ? "(Valid)" : "(Stale)"}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Fallback Warning Notice if Active */}
       {fallbackReason && (
         <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
           <div>
             <div className="font-semibold uppercase tracking-wider font-mono text-[11px] text-amber-400 mb-0.5">
-              Zero-Carbon Fallback Renormalization Applied
+              Conventional Fallback Renormalization Applied
             </div>
             <p className="leading-relaxed">{fallbackReason}</p>
           </div>
@@ -199,20 +281,27 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
       {/* Structured Deferral Evaluation & Decision Rationale Card */}
       <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-3">
-        <div className="flex items-center justify-between gap-2 border-b border-slate-800/60 pb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/60 pb-2">
           <div className="flex items-center gap-2">
             <Compass className="w-4 h-4 text-emerald-400" />
             <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono">
               Algorithmic Decision Rationale
             </h4>
           </div>
-          {defInfo && (
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-              Forecast Status: {defInfo.forecast_status}
-            </span>
+          {forecastBadge && (
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-mono px-2 py-0.5 rounded border font-semibold ${forecastBadge.bg}`}>
+                Forecast Status: {forecastBadge.label}
+              </span>
+            </div>
           )}
         </div>
         <p className="text-sm text-slate-300 leading-relaxed">{rationale}</p>
+        {forecastBadge && (
+          <p className="text-xs text-slate-400 italic bg-slate-950/40 p-2 rounded border border-slate-800/50">
+            {forecastBadge.desc}
+          </p>
+        )}
 
         {defInfo && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2 text-xs font-mono border-t border-slate-800/40">
@@ -221,15 +310,17 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
               <span className="text-slate-300 font-semibold">{defInfo.forecast_source}</span>
             </div>
             <div>
-              <span className="text-slate-500 block text-[11px]">Deferral Policy:</span>
-              <span className={defInfo.deferral_eligible ? "text-emerald-400" : "text-slate-400"}>
-                {defInfo.deferral_eligible ? "Eligible (LOW / Flexible)" : "Direct (Urgent SLA)"}
+              <span className="text-slate-500 block text-[11px]">Priority & Deferral Policy:</span>
+              <span className={priorityClass === "HIGH" ? "text-amber-400" : priorityClass === "MEDIUM" ? "text-cyan-400" : "text-emerald-400"}>
+                {deferralPolicyText}
               </span>
             </div>
             <div>
               <span className="text-slate-500 block text-[11px]">Threshold Required:</span>
               <span className="text-slate-300">
-                {defInfo.deferral_threshold_pct != null ? `≥ ${Number(defInfo.deferral_threshold_pct).toFixed(1)}% savings` : "15.0% relative"}
+                {defInfo.deferral_threshold_pct != null
+                  ? `≥ ${Number(defInfo.deferral_threshold_pct).toFixed(1)}% savings (Policy)`
+                  : "≥ 15.0% savings (Policy)"}
               </span>
             </div>
             <div>
@@ -250,7 +341,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
               <TrendingDown className="w-4 h-4 text-emerald-400" /> Counterfactual Baseline Comparison
             </h4>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-              Baseline: {baselineStrategy}
+              Baseline Strategy: {baselineStrategy}
             </span>
           </div>
 
@@ -258,7 +349,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60">
               <div className="text-[11px] text-slate-400 font-mono">Baseline Estimated Emissions</div>
               <div className="text-base font-bold font-mono text-slate-200 mt-1">
-                {baselineCo2 != null ? formatEmissions(baselineCo2, true, true) : "N/A"}
+                {comparison.baselineFormatted}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">Estimated under conventional non-carbon scheduler</div>
             </div>
@@ -266,11 +357,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60">
               <div className="text-[11px] text-slate-400 font-mono">EcoRoute Estimated Emissions</div>
               <div className="text-base font-bold font-mono text-emerald-400 mt-1">
-                {decision.estimated_co2eq_grams != null
-                  ? formatEmissions(decision.estimated_co2eq_grams, true, true)
-                  : sel?.estimated_emissions_co2eq_grams != null
-                  ? formatEmissions(sel.estimated_emissions_co2eq_grams, true, true)
-                  : "N/A"}
+                {comparison.ecorouteFormatted}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">Optimized via real-time grid carbon routing</div>
             </div>
@@ -278,7 +365,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
             <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60">
               <div className="text-[11px] text-slate-400 font-mono">Estimated Emissions Reduction</div>
               <div className="text-base font-bold font-mono text-cyan-400 mt-1">
-                {savingsCo2 != null ? formatEmissions(savingsCo2, true, true) : "N/A"}
+                {comparison.reductionFormatted}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">Derived from decision-time spatial optimization</div>
             </div>
