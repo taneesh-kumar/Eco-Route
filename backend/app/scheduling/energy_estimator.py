@@ -17,7 +17,9 @@ class RegionalWorkloadEstimate:
     duration_seconds: Decimal  # T_r
     delta_power_watts: Decimal  # ΔP
     energy_kwh: Decimal  # E_r
-    emissions_co2eq: Optional[Decimal]  # C_r
+    emissions_co2eq: Optional[Decimal] = None  # C_r
+    u_before: Optional[Decimal] = None
+    u_after: Optional[Decimal] = None
 
 
 class EnergyEstimator:
@@ -93,7 +95,7 @@ class EnergyEstimator:
         region: Region,
         carbon: Optional[CarbonIntensity] = None,
     ) -> RegionalWorkloadEstimate:
-        """Computes complete regional workload estimate (T_r, ΔP, E_r, C_r)."""
+        """Computes complete regional workload estimate (T_r, ΔP, E_r, C_r, U_before, U_after)."""
         duration = cls.calculate_duration(
             demand.base_execution_duration,
             region.performance_factor,
@@ -108,6 +110,9 @@ class EnergyEstimator:
 
         energy_kwh = cls.calculate_energy(delta_power, duration)
 
+        u_before = region.current_utilization
+        u_after = u_before + (demand.cpu_demand / region.max_cpu_capacity)
+
         # Emissions calculation: C_r = E_r * CI_r
         # Zero fabrication invariant: If carbon is None or unavailable, emissions = None
         emissions: Optional[Decimal] = None
@@ -119,4 +124,6 @@ class EnergyEstimator:
             delta_power_watts=delta_power,
             energy_kwh=energy_kwh,
             emissions_co2eq=emissions,
+            u_before=u_before,
+            u_after=u_after,
         )

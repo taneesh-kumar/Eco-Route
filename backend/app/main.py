@@ -53,6 +53,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.error(f"Failed to verify/seed default cloud regions on startup: {exc}")
 
+    # 1b. Validate configured Electricity Maps zones (Critical Rule #4)
+    try:
+        from app.carbon.client import ElectricityMapsClient
+        from app.db.seed import DEFAULT_REGIONS
+        em_client = ElectricityMapsClient()
+        if em_client.is_configured:
+            zones_to_verify = list(dict.fromkeys(r["electricity_maps_zone"] for r in DEFAULT_REGIONS if r.get("electricity_maps_zone")))
+            await em_client.validate_all_configured_zones(zones_to_verify)
+    except Exception as exc:
+        logger.error(f"Startup zone validation failed: {exc}")
+
     # 2. Launch background execution worker, deferral sweep, and dispatcher recovery loop
     worker = ExecutionWorker(worker_id="backend-worker-01")
     evaluator = DeferredJobEvaluator()

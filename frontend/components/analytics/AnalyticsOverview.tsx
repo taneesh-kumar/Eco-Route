@@ -47,11 +47,19 @@ export function AnalyticsOverview({
       ? Math.round((summary.completed_jobs / summary.total_jobs) * 100)
       : 100;
 
+  const hasSavings = summary.carbon_savings_pct_vs_baseline != null;
+  const savingsValue = hasSavings
+    ? `${summary.carbon_savings_pct_vs_baseline! >= 0 ? "+" : ""}${Number(summary.carbon_savings_pct_vs_baseline).toFixed(1)}%`
+    : "N/A";
+  const savingsDesc = hasSavings
+    ? "Realized carbon reduction vs conventional baseline"
+    : "Awaiting completed decisions with counterfactual baseline";
+
   const kpis = [
     {
       label: "Carbon Reduction vs Baseline",
-      value: `-${Number(summary.carbon_savings_pct_vs_baseline).toFixed(1)}%`,
-      desc: "Measured against unoptimized conventional baseline",
+      value: savingsValue,
+      desc: savingsDesc,
       icon: TrendingDown,
       color: "text-emerald-400",
       bg: "bg-emerald-500/10",

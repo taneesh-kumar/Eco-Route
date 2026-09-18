@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.carbon.service import CarbonService
+from app.core.config import get_settings
 from app.domain.carbon import CarbonIntensity, CarbonQuality, CarbonSource
 from app.domain.decision import SchedulingDecision
 from app.domain.exceptions import DomainError, SchedulingEngineError, UnschedulableWorkloadError
@@ -123,6 +124,9 @@ class DecisionEngine:
                 decision = SchedulingDecision(
                     job_id=job.id,
                     decision_action=DecisionAction.DEFER,
+                    decision_mode="DEFERRED",
+                    carbon_optimization_applied=False,
+                    fallback_reason="No candidate regions are currently feasible within operational constraints.",
                     carbon_source_used=CarbonSource.ELECTRICITY_MAPS,
                     carbon_quality_used=CarbonQuality.UNAVAILABLE,
                     decision_reason=empty_reason,
@@ -164,14 +168,19 @@ class DecisionEngine:
                 carbon=carbon_obs[reg.id],
             )
             estimates[reg.id] = est
+            projected_u = (
+                est.u_after
+                if est.u_after is not None
+                else reg.current_utilization + (job.demand.cpu_demand / reg.max_cpu_capacity)
+            )
             raw_metrics[reg.id] = {
                 "duration": est.duration_seconds,
-                "utilization": reg.current_utilization,
+                "utilization": projected_u,
                 "latency": reg.network_latency_ms,
                 "emissions": est.emissions_co2eq,
             }
 
-        # Stage 7: Min-Max Normalization (Feasible candidates only)
+        # Stage 7: Min-Max Normalization (Feasible candidates only, using projected utilization)
         norm_metrics, norm_factors = Normalizer.normalize_candidates(raw_metrics)
 
         # Stage 8: Strategy Scoring & Ranking across the 5 variants
@@ -189,6 +198,29 @@ class DecisionEngine:
 
         winning_candidate = ranked_candidates[0]
 
+        # Stage 8b: Evaluate Counterfactual Conventional Baseline (Critical Rule #23)
+        baseline_strategy_name = "CONVENTIONAL"
+        conv_strat = get_scheduler_strategy(SchedulerVariant.CONVENTIONAL)
+        conv_ranked = conv_strat.rank_candidates(
+            candidates=candidate_tuples,
+            normalized_metrics=norm_metrics,
+            carbon_available=carbon_available,
+            random_seed=random_seed,
+        )
+        baseline_winner = conv_ranked[0]
+        baseline_region_id = baseline_winner.region.id
+        baseline_energy_kwh = baseline_winner.estimate.energy_kwh
+        baseline_co2eq_grams = baseline_winner.estimate.emissions_co2eq
+
+        if (
+            baseline_co2eq_grams is not None
+            and winning_candidate.estimate.emissions_co2eq is not None
+        ):
+            diff = baseline_co2eq_grams - winning_candidate.estimate.emissions_co2eq
+            estimated_savings_co2eq_grams = max(Decimal("0.0"), diff)
+        else:
+            estimated_savings_co2eq_grams = None
+
         # Stage 9: Deferral & Slack Evaluation
         slack = DeadlineSlack(
             deadline=job.deadline,
@@ -196,14 +228,88 @@ class DecisionEngine:
             estimated_execution_time=winning_candidate.estimate.duration_seconds,
         )
 
+        # Stage 9: Deferral & Slack Evaluation
+        slack = DeadlineSlack(
+            deadline=job.deadline,
+            current_time=now,
+            estimated_execution_time=winning_candidate.estimate.duration_seconds,
+        )
+
+        settings = get_settings()
+        min_rel_imp = Decimal(str(settings.CARBON_DEFERRAL_MIN_RELATIVE_IMPROVEMENT))
+        threshold_ratio = Decimal("1.0") - min_rel_imp
+        deferral_threshold_pct = min_rel_imp * Decimal("100")
+        eff_epsilon = Decimal(str(settings.CARBON_DEFERRAL_EPSILON)) if epsilon == Decimal("0.0") else epsilon
+
+        deferral_eligible = job.priority.allows_carbon_deferral and carbon_available
+        from datetime import timedelta
+        forecast_checked_until = (now + timedelta(seconds=float(slack.slack_seconds))).isoformat() if slack.slack_seconds > 0 else None
+        found_future_emiss = None
+        found_savings = None
+        found_rel_imp = None
+        found_forecast_ts = None
+
+        active_forecast_jr = verified_forecast_jr
+        if active_forecast_jr is None and deferral_eligible:
+            try:
+                for reg in feasible_regions:
+                    pts = await self.carbon_service.get_forecast(reg)
+                    if pts:
+                        reg_est = estimates[reg.id]
+                        dur_sec = float(reg_est.duration_seconds)
+                        for pt in pts:
+                            proj_completion = pt.timestamp + timedelta(seconds=dur_sec)
+                            if pt.timestamp > now and proj_completion <= job.deadline:
+                                curr_emiss = winning_candidate.estimate.emissions_co2eq
+                                if curr_emiss is not None and curr_emiss > Decimal("0"):
+                                    future_emiss = reg_est.energy_kwh * pt.carbon_intensity
+                                    diff = curr_emiss - future_emiss
+                                    rel_imp = (diff / curr_emiss) * Decimal("100")
+                                    if future_emiss < curr_emiss * threshold_ratio:
+                                        active_forecast_jr = Decimal("0.01")
+                                        found_future_emiss = future_emiss
+                                        found_savings = diff
+                                        found_rel_imp = rel_imp
+                                        found_forecast_ts = pt.timestamp.isoformat()
+                                        break
+                    if active_forecast_jr is not None:
+                        break
+            except Exception as exc:
+                logger.debug("Forecast opportunity check passed without match: %s", exc)
+
         deferral_res = DeferralEvaluator.evaluate_with_candidates(
             slack=slack,
             current_best_jr=winning_candidate.score_result.cost_score_jr,
-            verified_forecast_jr=verified_forecast_jr,
-            epsilon=epsilon,
+            verified_forecast_jr=active_forecast_jr,
+            epsilon=eff_epsilon,
+            deferral_eligible=deferral_eligible,
+            forecast_checked_until=forecast_checked_until,
+            current_expected_emissions=winning_candidate.estimate.emissions_co2eq,
+            future_expected_emissions=found_future_emiss,
+            expected_savings=found_savings,
+            relative_improvement_pct=found_rel_imp,
+            deferral_threshold_pct=deferral_threshold_pct,
+            forecast_timestamp=found_forecast_ts,
         )
 
-        # Stage 10: State Machine Transitions
+        # Stage 10: State Machine Transitions & Decision Mode Determination
+        if carbon_available:
+            if deferral_res.action == DecisionAction.DEFER:
+                decision_mode = "DEFERRED"
+                carbon_optimization_applied = True
+                fallback_reason = None
+            else:
+                decision_mode = "CARBON_AWARE"
+                carbon_optimization_applied = True
+                fallback_reason = None
+        else:
+            decision_mode = "CONVENTIONAL_FALLBACK"
+            carbon_optimization_applied = False
+            fallback_reason = (
+                "Carbon data unavailable or untrusted across candidate regions; "
+                "bypassed carbon optimization and applied conventional operational scheduling."
+            )
+
         if deferral_res.action == DecisionAction.EXECUTE:
             job.transition_to(JobStatus.DISPATCHED)
             selected_region_id = winning_candidate.region.id
@@ -224,20 +330,63 @@ class DecisionEngine:
                 "composite_score": None,
                 "cost_score_jr": None,
                 "raw_carbon_gco2": None,
-                "raw_cost_usd": None,
                 "raw_latency_ms": None,
                 "norm_carbon": None,
-                "norm_cost": None,
+                "norm_duration": None,
+                "norm_utilization": None,
                 "norm_latency": None,
             })
+
+        # Canonical single authoritative snapshot of the selected candidate
+        selected_candidate_snapshot = {
+            "selected_region_id": str(winning_candidate.region.id) if deferral_res.action == DecisionAction.EXECUTE else None,
+            "selected_region_code": winning_candidate.region.code if deferral_res.action == DecisionAction.EXECUTE else None,
+            "carbon_intensity_gco2_per_kwh": float(winning_candidate.carbon.value) if winning_candidate.carbon.value is not None else None,
+            "carbon_source": winning_candidate.carbon.source.value,
+            "carbon_quality": winning_candidate.carbon.quality.value,
+            "carbon_is_estimated": winning_candidate.carbon.is_estimated,
+            "carbon_estimation_method": winning_candidate.carbon.estimation_method or ("Electricity Maps Live Model" if winning_candidate.carbon.is_estimated else None),
+            "carbon_observed_at": winning_candidate.carbon.observed_at.isoformat() if winning_candidate.carbon.observed_at else None,
+            "carbon_cache_age_seconds": (
+                int((now - winning_candidate.carbon.received_at).total_seconds())
+                if winning_candidate.carbon.received_at
+                else None
+            ),
+            "energy_kwh": str(winning_candidate.estimate.energy_kwh),
+            "estimated_emissions_co2eq_grams": (
+                str(winning_candidate.estimate.emissions_co2eq)
+                if winning_candidate.estimate.emissions_co2eq is not None
+                else None
+            ),
+            "duration_seconds": str(winning_candidate.estimate.duration_seconds),
+            "projected_utilization": float(
+                winning_candidate.estimate.u_after
+                if winning_candidate.estimate.u_after is not None
+                else winning_candidate.region.current_utilization
+            ),
+            "latency_ms": float(winning_candidate.region.network_latency_ms),
+            "composite_score": float(winning_candidate.score_result.cost_score_jr),
+        } if deferral_res.action == DecisionAction.EXECUTE else None
+
+        score_breakdown_dict = dict(winning_candidate.score_result.score_breakdown or {})
+        score_breakdown_dict["selected_candidate"] = selected_candidate_snapshot
+        score_breakdown_dict["deferral_info"] = deferral_res.to_dict()
 
         decision = SchedulingDecision(
             job_id=job.id,
             decision_action=deferral_res.action,
+            decision_mode=decision_mode,
+            carbon_optimization_applied=carbon_optimization_applied,
+            fallback_reason=fallback_reason,
+            baseline_strategy=baseline_strategy_name,
+            baseline_region_id=baseline_region_id,
+            baseline_energy_kwh=baseline_energy_kwh,
+            baseline_co2eq_grams=baseline_co2eq_grams,
+            estimated_savings_co2eq_grams=estimated_savings_co2eq_grams,
             carbon_source_used=winning_candidate.carbon.source,
             carbon_quality_used=winning_candidate.carbon.quality,
             decision_reason=deferral_res.reason,
-            score_breakdown=winning_candidate.score_result.score_breakdown,
+            score_breakdown=score_breakdown_dict,
             candidate_rankings=rankings_payload,
             applied_weights=winning_candidate.score_result.applied_weights,
             selected_region_id=selected_region_id,

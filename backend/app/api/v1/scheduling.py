@@ -66,24 +66,7 @@ async def get_decision_explainability(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"SchedulingDecision '{decision_id}' not found.",
         )
-    return DecisionExplainabilityResponse(
-        id=dec.id,
-        job_id=dec.job_id,
-        attempt_id=dec.attempt_id,
-        selected_region_id=dec.selected_region_id,
-        decision_action=dec.decision_action,
-        cost_score_jr=dec.cost_score_jr,
-        estimated_energy_kwh=dec.estimated_energy_kwh,
-        estimated_co2eq_grams=dec.estimated_co2eq_grams,
-        carbon_source_used=dec.carbon_source_used,
-        carbon_quality_used=dec.carbon_quality_used,
-        decision_reason=dec.decision_reason,
-        score_breakdown=dec.score_breakdown,
-        candidate_rankings=dec.candidate_rankings,
-        applied_weights=dec.applied_weights,
-        normalization_factors=dec.normalization_factors,
-        created_at=dec.created_at,
-    )
+    return DecisionExplainabilityResponse.model_validate(dec)
 
 
 @router.get("/jobs/{job_id}/decision", response_model=DecisionExplainabilityResponse)
@@ -98,24 +81,7 @@ async def get_latest_decision_for_job(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No scheduling decision found for job '{job_id}'.",
         )
-    return DecisionExplainabilityResponse(
-        id=dec.id,
-        job_id=dec.job_id,
-        attempt_id=dec.attempt_id,
-        selected_region_id=dec.selected_region_id,
-        decision_action=dec.decision_action,
-        cost_score_jr=dec.cost_score_jr,
-        estimated_energy_kwh=dec.estimated_energy_kwh,
-        estimated_co2eq_grams=dec.estimated_co2eq_grams,
-        carbon_source_used=dec.carbon_source_used,
-        carbon_quality_used=dec.carbon_quality_used,
-        decision_reason=dec.decision_reason,
-        score_breakdown=dec.score_breakdown,
-        candidate_rankings=dec.candidate_rankings,
-        applied_weights=dec.applied_weights,
-        normalization_factors=dec.normalization_factors,
-        created_at=dec.created_at,
-    )
+    return DecisionExplainabilityResponse.model_validate(dec)
 
 
 

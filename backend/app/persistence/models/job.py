@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import List, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from app.persistence.models.job_attempt import JobAttempt
     from app.persistence.models.scheduling_decision import SchedulingDecision
     from app.persistence.models.audit_event import AuditEvent
+    from app.persistence.models.region import Region
 
 
 class Job(Base):
@@ -55,6 +57,11 @@ class Job(Base):
         Integer,
         nullable=False,
     )
+    priority_class: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="MEDIUM",
+    )
     deadline: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -74,6 +81,12 @@ class Job(Base):
         nullable=False,
         default=3,
     )
+    assigned_region_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -87,6 +100,11 @@ class Job(Base):
     )
 
     # Relationships
+    assigned_region: Mapped[Optional["Region"]] = relationship(
+        "Region",
+        foreign_keys=[assigned_region_id],
+        lazy="selectin",
+    )
     attempts: Mapped[List["JobAttempt"]] = relationship(
         "JobAttempt",
         back_populates="job",

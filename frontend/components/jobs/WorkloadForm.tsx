@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { JobCreatePayload, WorkloadType } from "@/lib/types";
-import { Cpu, Clock, Layers, Sliders, Send, Check } from "lucide-react";
+import { Cpu, Clock, Layers, Sliders, Send, Check, ShieldAlert, Sparkles } from "lucide-react";
 
 interface WorkloadFormProps {
   onSubmit: (payload: JobCreatePayload) => Promise<void>;
   loading?: boolean;
 }
-
 const PRESETS: Record<
   string,
   {
@@ -18,9 +17,11 @@ const PRESETS: Record<
     mem: number;
     dur: number;
     pri: number;
+    priClass: "HIGH" | "MEDIUM" | "LOW";
     offset: number;
     wCarbon: number;
-    wCost: number;
+    wTime: number;
+    wUtil: number;
     wLatency: number;
   }
 > = {
@@ -31,9 +32,11 @@ const PRESETS: Record<
     mem: 16,
     dur: 15,
     pri: 5,
-    offset: 300,
-    wCarbon: 0.6,
-    wCost: 0.3,
+    priClass: "MEDIUM",
+    offset: 3600,
+    wCarbon: 0.5,
+    wTime: 0.2,
+    wUtil: 0.2,
     wLatency: 0.1,
   },
   INFERENCE: {
@@ -42,11 +45,13 @@ const PRESETS: Record<
     cpu: 2,
     mem: 8,
     dur: 5,
-    pri: 9,
+    pri: 2,
+    priClass: "HIGH",
     offset: 120,
-    wCarbon: 0.2,
-    wCost: 0.2,
-    wLatency: 0.6,
+    wCarbon: 0.1,
+    wTime: 0.3,
+    wUtil: 0.1,
+    wLatency: 0.5,
   },
   TRAINING: {
     name: "transformer-training-step",
@@ -54,27 +59,54 @@ const PRESETS: Record<
     cpu: 16,
     mem: 64,
     dur: 30,
-    pri: 4,
-    offset: 600,
-    wCarbon: 0.7,
-    wCost: 0.2,
+    pri: 9,
+    priClass: "LOW",
+    offset: 7200,
+    wCarbon: 0.6,
+    wTime: 0.15,
+    wUtil: 0.15,
     wLatency: 0.1,
   },
 };
 
 export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
-  const [workloadName, setWorkloadName] = useState("demo-batch-etl-01");
+  const [workloadName, setWorkloadName] = useState("batch-data-pipeline-01");
   const [workloadType, setWorkloadType] = useState<WorkloadType>("BATCH");
   const [cpuCores, setCpuCores] = useState(4);
   const [memoryGb, setMemoryGb] = useState(16);
   const [duration, setDuration] = useState(15);
   const [priority, setPriority] = useState(5);
-  const [deadlineOffset, setDeadlineOffset] = useState(300);
+  const [priorityClass, setPriorityClass] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
+  const [deadlineOffset, setDeadlineOffset] = useState(600);
   const [maxRetries, setMaxRetries] = useState(3);
 
-  // Multi-objective weights
-  const [carbonWeight, setCarbonWeight] = useState(0.5);
-  const [costWeight, setCostWeight] = useState(0.3);
+  const handlePriorityChange = (val: number) => {
+    const num = Math.max(1, Math.min(10, val));
+    setPriority(num);
+    if (num <= 3) {
+      setPriorityClass("HIGH");
+    } else if (num <= 7) {
+      setPriorityClass("MEDIUM");
+    } else {
+      setPriorityClass("LOW");
+    }
+  };
+
+  const handlePriorityClassChange = (cls: "HIGH" | "MEDIUM" | "LOW") => {
+    setPriorityClass(cls);
+    if (cls === "HIGH") {
+      setPriority(2);
+    } else if (cls === "MEDIUM") {
+      setPriority(5);
+    } else {
+      setPriority(9);
+    }
+  };
+
+  // Multi-objective weights (sum = 1.0)
+  const [carbonWeight, setCarbonWeight] = useState(0.4);
+  const [timeWeight, setTimeWeight] = useState(0.2);
+  const [utilWeight, setUtilWeight] = useState(0.2);
   const [latencyWeight, setLatencyWeight] = useState(0.2);
   const [submitted, setSubmitted] = useState(false);
 
@@ -87,44 +119,23 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
     setMemoryGb(p.mem);
     setDuration(p.dur);
     setPriority(p.pri);
+    setPriorityClass(p.priClass);
     setDeadlineOffset(p.offset);
     setCarbonWeight(p.wCarbon);
-    setCostWeight(p.wCost);
+    setTimeWeight(p.wTime);
+    setUtilWeight(p.wUtil);
     setLatencyWeight(p.wLatency);
   };
 
-  const handleWeightChange = (
-    changed: "carbon" | "cost" | "latency",
-    val: number
-  ) => {
-    const rounded = Math.round(val * 100) / 100;
-    if (changed === "carbon") {
-      setCarbonWeight(rounded);
-      const rem = Math.max(0, 1 - rounded);
-      setCostWeight(Math.round((rem * 0.6) * 100) / 100);
-      setLatencyWeight(Math.round((rem * 0.4) * 100) / 100);
-    } else if (changed === "cost") {
-      setCostWeight(rounded);
-      const rem = Math.max(0, 1 - rounded);
-      setCarbonWeight(Math.round((rem * 0.7) * 100) / 100);
-      setLatencyWeight(Math.round((rem * 0.3) * 100) / 100);
-    } else {
-      setLatencyWeight(rounded);
-      const rem = Math.max(0, 1 - rounded);
-      setCarbonWeight(Math.round((rem * 0.6) * 100) / 100);
-      setCostWeight(Math.round((rem * 0.4) * 100) / 100);
-    }
-  };
-
-  const weightSum = Math.round((carbonWeight + costWeight + latencyWeight) * 100) / 100;
+  const weightSum = Math.round((carbonWeight + timeWeight + utilWeight + latencyWeight) * 100) / 100;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Normalize weights to sum exactly to 1.0
-    const sum = carbonWeight + costWeight + latencyWeight;
+    const sum = carbonWeight + timeWeight + utilWeight + latencyWeight;
     const finalCarbon = Math.round((carbonWeight / sum) * 1000) / 1000;
-    const finalCost = Math.round((costWeight / sum) * 1000) / 1000;
-    const finalLatency = Math.round((1.0 - finalCarbon - finalCost) * 1000) / 1000;
+    const finalTime = Math.round((timeWeight / sum) * 1000) / 1000;
+    const finalUtil = Math.round((utilWeight / sum) * 1000) / 1000;
+    const finalLatency = Math.round((1.0 - finalCarbon - finalTime - finalUtil) * 1000) / 1000;
 
     await onSubmit({
       workload_name: workloadName,
@@ -133,10 +144,12 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
       memory_gb: memoryGb,
       estimated_duration_seconds: duration,
       priority,
+      priority_class: priorityClass,
       deadline_offset_seconds: deadlineOffset,
       max_retries: maxRetries,
       carbon_weight: finalCarbon,
-      cost_weight: finalCost,
+      time_weight: finalTime,
+      utilization_weight: finalUtil,
       latency_weight: finalLatency,
     });
 
@@ -155,7 +168,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
             <Layers className="w-5 h-5 text-emerald-400" /> Workload Submission
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Submit a new cloud compute demand profile with multi-objective scheduling parameters.
+            Submit a simulated compute demand profile with multi-objective tradeoffs ($J_r$) and carbon deferral policies.
           </p>
         </div>
 
@@ -175,7 +188,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Workload Name */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -200,16 +213,32 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
             onChange={(e) => setWorkloadType(e.target.value as WorkloadType)}
             className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/80 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
           >
-            <option value="BATCH">BATCH (ETL, MapReduce, Crunching)</option>
+            <option value="BATCH">BATCH (Delay-Tolerant, ETL)</option>
             <option value="INFERENCE">INFERENCE (Latency-Critical, Realtime)</option>
-            <option value="TRAINING">TRAINING (Deep Learning, Heavy Compute)</option>
+            <option value="TRAINING">TRAINING (Compute-Intensive)</option>
           </select>
         </div>
 
-        {/* Priority */}
+        {/* Priority Class Policy */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Priority Tier (1 - 10)
+            Priority Class (Carbon Policy)
+          </label>
+          <select
+            value={priorityClass}
+            onChange={(e) => handlePriorityClassChange(e.target.value as "HIGH" | "MEDIUM" | "LOW")}
+            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/80 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
+          >
+            <option value="HIGH">HIGH (Urgent: 1-3, No Deferral)</option>
+            <option value="MEDIUM">MEDIUM (Balanced: 4-7)</option>
+            <option value="LOW">LOW (Tolerant: 8-10, Defer on Peak)</option>
+          </select>
+        </div>
+
+        {/* Priority Value */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            Numeric Priority (1 - 10)
           </label>
           <input
             type="number"
@@ -217,7 +246,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
             max="10"
             required
             value={priority}
-            onChange={(e) => setPriority(parseInt(e.target.value) || 1)}
+            onChange={(e) => handlePriorityChange(parseInt(e.target.value) || 1)}
             className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/80 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
           />
         </div>
@@ -256,7 +285,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
         {/* Duration */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Estimated Duration (Seconds)
+            Base Execution Duration (Seconds)
           </label>
           <input
             type="number"
@@ -272,7 +301,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
         {/* Deadline Slack Offset */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Deadline Slack Offset (Seconds from now)
+            Deadline Slack (Seconds)
           </label>
           <input
             type="number"
@@ -284,22 +313,6 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
             className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/80 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
           />
         </div>
-
-        {/* Max Retries (Total attempt budget) */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Total Attempt Budget (max_retries)
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="5"
-            required
-            value={maxRetries}
-            onChange={(e) => setMaxRetries(parseInt(e.target.value) || 1)}
-            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/80 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
-          />
-        </div>
       </div>
 
       {/* Multi-Objective Optimization Weights */}
@@ -308,7 +321,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-emerald-400" />
             <span className="text-xs font-semibold text-slate-200">
-              Multi-Objective Optimization Tradeoff Weights
+              Multi-Objective Tradeoff Weights: <span className="font-mono text-emerald-400">J_r = w_C·N(C) + w_T·N(T) + w_U·N(U) + w_L·N(L)</span>
             </span>
           </div>
           <span
@@ -320,10 +333,10 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800/60">
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-emerald-400 font-medium">Carbon Priority</span>
+              <span className="text-emerald-400 font-medium">w_C (Carbon Impact)</span>
               <span className="font-mono text-white">{carbonWeight.toFixed(2)}</span>
             </div>
             <input
@@ -332,30 +345,46 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
               max="1"
               step="0.05"
               value={carbonWeight}
-              onChange={(e) => handleWeightChange("carbon", parseFloat(e.target.value))}
+              onChange={(e) => setCarbonWeight(parseFloat(e.target.value))}
               className="w-full accent-emerald-500 cursor-pointer"
             />
           </div>
 
           <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800/60">
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-amber-400 font-medium">Cost Priority</span>
-              <span className="font-mono text-white">{costWeight.toFixed(2)}</span>
+              <span className="text-blue-400 font-medium">w_T (Execution Time)</span>
+              <span className="font-mono text-white">{timeWeight.toFixed(2)}</span>
             </div>
             <input
               type="range"
               min="0"
               max="1"
               step="0.05"
-              value={costWeight}
-              onChange={(e) => handleWeightChange("cost", parseFloat(e.target.value))}
-              className="w-full accent-amber-500 cursor-pointer"
+              value={timeWeight}
+              onChange={(e) => setTimeWeight(parseFloat(e.target.value))}
+              className="w-full accent-blue-500 cursor-pointer"
             />
           </div>
 
           <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800/60">
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-cyan-400 font-medium">Latency Priority</span>
+              <span className="text-purple-400 font-medium">w_U (Capacity Balance)</span>
+              <span className="font-mono text-white">{utilWeight.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={utilWeight}
+              onChange={(e) => setUtilWeight(parseFloat(e.target.value))}
+              className="w-full accent-purple-500 cursor-pointer"
+            />
+          </div>
+
+          <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800/60">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-cyan-400 font-medium">w_L (Network Latency)</span>
               <span className="font-mono text-white">{latencyWeight.toFixed(2)}</span>
             </div>
             <input
@@ -364,7 +393,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
               max="1"
               step="0.05"
               value={latencyWeight}
-              onChange={(e) => handleWeightChange("latency", parseFloat(e.target.value))}
+              onChange={(e) => setLatencyWeight(parseFloat(e.target.value))}
               className="w-full accent-cyan-500 cursor-pointer"
             />
           </div>

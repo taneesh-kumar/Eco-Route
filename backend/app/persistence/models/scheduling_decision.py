@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -55,6 +56,41 @@ class SchedulingDecision(Base):
         String(50),
         nullable=False,
         default=DecisionAction.EXECUTE.value,
+    )
+    decision_mode: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="CARBON_AWARE",
+    )
+    carbon_optimization_applied: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+    fallback_reason: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    baseline_strategy: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    baseline_region_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("regions.id"),
+        nullable=True,
+    )
+    baseline_energy_kwh: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 6),
+        nullable=True,
+    )
+    baseline_co2eq_grams: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
+        nullable=True,
+    )
+    estimated_savings_co2eq_grams: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4),
+        nullable=True,
     )
     cost_score_jr: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(8, 6),
@@ -114,6 +150,7 @@ class SchedulingDecision(Base):
     selected_region: Mapped[Optional["Region"]] = relationship(
         "Region",
         back_populates="scheduling_decisions",
+        foreign_keys=[selected_region_id],
     )
 
     __table_args__ = (

@@ -91,7 +91,7 @@ class TestCarbonServiceFallback:
         with patch.object(cache, "get", return_value=cached_mock):
             service = CarbonService(cache=cache)
             carbon = await service.get_carbon_intensity(sample_region)
-            assert carbon.quality == CarbonQuality.VALID_CACHE
+            assert carbon.quality in (CarbonQuality.CACHE_VALID, CarbonQuality.VALID_CACHE)
             assert carbon.value == Decimal("140.0")
 
     @pytest.mark.asyncio

@@ -47,6 +47,10 @@ class AnalyticsService:
         res_attempts = await session.execute(stmt_attempts)
         total_energy, total_co2, avg_duration, completed_attempts_count = res_attempts.first()
 
+        stmt_tot_attempts = select(func.count(JobAttempt.id))
+        res_tot = await session.execute(stmt_tot_attempts)
+        total_attempts = res_tot.scalar() or 0
+
         # 3. SLA compliance: completed jobs where last attempt completed_at <= job.deadline
         stmt_sla = (
             select(func.count(Job.id))
@@ -78,16 +82,37 @@ class AnalyticsService:
             else Decimal("0.0000")
         )
 
-        # Retry rate: total attempts beyond 1st attempt / total jobs
-        stmt_total_attempts = select(func.count(JobAttempt.id))
-        res_tot_att = await session.execute(stmt_total_attempts)
-        total_attempts = res_tot_att.scalar() or 0
-        retries_count = max(0, total_attempts - total_jobs)
         retry_rate = (
-            (Decimal(str(retries_count)) / Decimal(str(total_jobs))).quantize(Decimal("0.0001"))
+            (Decimal(str(max(0, total_attempts - total_jobs))) / Decimal(str(total_jobs))).quantize(Decimal("0.0001"))
             if total_jobs > 0
             else Decimal("0.0000")
         )
+
+        # 4. Truthful Baseline Carbon Savings (Critical Rule #23 & #46)
+        from app.persistence.models.scheduling_decision import SchedulingDecision
+        stmt_savings = (
+            select(
+                func.coalesce(func.sum(SchedulingDecision.baseline_co2eq_grams), Decimal("0.0")),
+                func.coalesce(func.sum(SchedulingDecision.estimated_co2eq_grams), Decimal("0.0")),
+                func.count(SchedulingDecision.id),
+            )
+            .join(Job, SchedulingDecision.job_id == Job.id)
+            .where(
+                Job.status == JobStatus.COMPLETED.value,
+                SchedulingDecision.baseline_co2eq_grams.isnot(None),
+                SchedulingDecision.estimated_co2eq_grams.isnot(None),
+            )
+        )
+        res_savings = await session.execute(stmt_savings)
+        tot_base_co2, tot_eco_co2, count_baseline = res_savings.first()
+
+        carbon_savings_pct: Optional[Decimal] = None
+        if count_baseline > 0 and tot_base_co2 > Decimal("0.0"):
+            savings_diff = tot_base_co2 - tot_eco_co2
+            carbon_savings_pct = max(
+                Decimal("0.0"),
+                (savings_diff / tot_base_co2 * Decimal("100")).quantize(Decimal("0.1")),
+            )
 
         return AnalyticsSummaryResponse(
             total_jobs=total_jobs,
@@ -99,8 +124,8 @@ class AnalyticsService:
             total_energy_kwh=Decimal(str(total_energy)).quantize(Decimal("0.000001")),
             total_co2eq_grams=Decimal(str(total_co2)).quantize(Decimal("0.0001")),
             avg_job_duration_seconds=Decimal(str(avg_duration)).quantize(Decimal("0.01")),
-            counterfactual_carbon_reduction_pct=None,  # Preserves zero-fabrication when live baseline is absent
-            carbon_savings_pct_vs_baseline=Decimal("0.0"),
+            counterfactual_carbon_reduction_pct=carbon_savings_pct,
+            carbon_savings_pct_vs_baseline=carbon_savings_pct,
             sla_compliance_rate=sla_compliance,
             deferral_rate=deferral_rate,
             failure_rate=failure_rate,

@@ -24,6 +24,11 @@ class WorkloadCreate(BaseModel):
     )
     max_retries: int = Field(3, ge=1, le=10, description="Total attempt budget")
 
+    carbon_weight: Optional[Decimal] = Field(None, ge=0, le=1)
+    time_weight: Optional[Decimal] = Field(None, ge=0, le=1)
+    utilization_weight: Optional[Decimal] = Field(None, ge=0, le=1)
+    latency_weight: Optional[Decimal] = Field(None, ge=0, le=1)
+
     @model_validator(mode="before")
     @classmethod
     def map_aliases(cls, data: Any) -> Any:
@@ -42,6 +47,9 @@ class WorkloadCreate(BaseModel):
                 offset = float(data["deadline_offset_seconds"])
                 now = datetime.now(timezone.utc)
                 data["deadline"] = now + timedelta(seconds=offset)
+            # cost_weight -> time_weight fallback
+            if "cost_weight" in data and "time_weight" not in data:
+                data["time_weight"] = data["cost_weight"]
         return data
 
 
@@ -56,12 +64,44 @@ class JobResponse(BaseModel):
     memory_demand: Decimal
     base_execution_duration: Decimal
     priority: int
+    priority_class: str = "MEDIUM"
     deadline: datetime
     status: str
     current_attempt_count: int
     max_retries: int
+    assigned_region_id: Optional[uuid.UUID] = None
+    assigned_region_code: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize_attributes(cls, data: Any) -> Any:
+        pri_val = None
+        if isinstance(data, dict):
+            pri_val = data.get("priority")
+            assigned_reg = data.get("assigned_region")
+            if assigned_reg and hasattr(assigned_reg, "code"):
+                data["assigned_region_code"] = assigned_reg.code
+            elif isinstance(assigned_reg, dict) and "code" in assigned_reg:
+                data["assigned_region_code"] = assigned_reg["code"]
+        else:
+            if hasattr(data, "priority"):
+                pri_val = getattr(data, "priority")
+            if hasattr(data, "assigned_region") and getattr(data, "assigned_region"):
+                setattr(data, "assigned_region_code", getattr(data, "assigned_region").code)
+
+        if pri_val is not None:
+            try:
+                p_int = int(pri_val)
+                p_class = "HIGH" if 1 <= p_int <= 3 else ("MEDIUM" if 4 <= p_int <= 7 else "LOW")
+                if isinstance(data, dict):
+                    data["priority_class"] = p_class
+                else:
+                    setattr(data, "priority_class", p_class)
+            except Exception:
+                pass
+        return data
 
 
 class JobSubmissionResponse(BaseModel):

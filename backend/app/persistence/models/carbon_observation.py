@@ -83,11 +83,11 @@ class CarbonObservation(Base):
             name="chk_carbon_intensity_non_negative",
         ),
         CheckConstraint(
-            "data_quality IN ('LIVE', 'CACHED', 'UNAVAILABLE')",
+            "data_quality IN ('LIVE', 'LIVE_TRUSTED', 'LIVE_ESTIMATED', 'CACHED', 'CACHE_VALID', 'CACHE_STALE', 'VALID_CACHE', 'FALLBACK_CACHE', 'UNTRUSTED', 'UNAVAILABLE')",
             name="chk_carbon_obs_valid_quality",
         ),
         CheckConstraint(
-            "source IN ('ELECTRICITY_MAPS', 'REGIONAL_PROFILE')",
+            "source IN ('ELECTRICITY_MAPS', 'REGIONAL_PROFILE', 'CACHE', 'FORECAST', 'LIVE', 'UNAVAILABLE')",
             name="chk_carbon_obs_valid_source",
         ),
         CheckConstraint(

@@ -129,8 +129,10 @@ class RetryManager:
             "Triggering fresh multi-objective evaluation."
         )
         db_job.status = JobStatus.EVALUATING.value
+        db_job.assigned_region_id = None
         db_job.updated_at = now
         domain_job.status = JobStatus.EVALUATING
+        domain_job.assigned_region_id = None
 
         await audit_repo.record_event(
             event_type="RETRY_REQUESTED",

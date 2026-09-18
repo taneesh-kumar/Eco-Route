@@ -40,6 +40,11 @@ class Region(Base):
         String(100),
         nullable=False,
     )
+    electricity_maps_zone: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="",
+    )
     provider: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -122,6 +127,7 @@ class Region(Base):
     scheduling_decisions: Mapped[List["SchedulingDecision"]] = relationship(
         "SchedulingDecision",
         back_populates="selected_region",
+        foreign_keys="[SchedulingDecision.selected_region_id]",
     )
 
     def __init__(self, **kwargs):

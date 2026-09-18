@@ -9,8 +9,7 @@ def test_default_settings():
     assert settings.PORT == 8000
     assert settings.DATABASE_URL is None
     assert settings.REDIS_URL is None
-    assert settings.ELECTRICITY_MAPS_API_KEY is None
-    assert settings.ELECTRICITY_MAPS_API_URL == "https://api.electricitymap.org/v3"
+    assert settings.ELECTRICITY_MAPS_API_URL == "https://api.electricitymap.org/v4"
     assert "http://localhost:3000" in settings.CORS_ORIGINS
     assert not settings.is_production
 

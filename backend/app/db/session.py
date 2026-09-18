@@ -26,6 +26,7 @@ def get_db_engine() -> Optional[AsyncEngine]:
             settings.DATABASE_URL,
             echo=False,
             pool_pre_ping=True,
+            pool_recycle=300,
         )
         _async_sessionmaker = async_sessionmaker(
             bind=_async_engine,

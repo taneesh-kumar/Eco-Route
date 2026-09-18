@@ -97,8 +97,9 @@ class ExecutionDispatcher:
         )
         session.add(attempt)
 
-        # 5. Update Job status and counter
+        # 5. Update Job status, assigned_region_id, and counter
         db_job.current_attempt_count = next_attempt_number
+        db_job.assigned_region_id = decision.selected_region_id
         db_job.status = JobStatus.DISPATCHED.value
         db_job.updated_at = now
 

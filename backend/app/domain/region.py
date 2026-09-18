@@ -28,6 +28,7 @@ class Region:
         provider: str,
         max_cpu_capacity: Decimal,
         max_memory_capacity: Decimal,
+        electricity_maps_zone: str = "",
         id: Optional[uuid.UUID] = None,
         current_utilization: Decimal = Decimal("0.0"),
         performance_factor: Decimal = Decimal("1.0"),
@@ -66,6 +67,7 @@ class Region:
         self.code: str = code.strip()
         self.name: str = name.strip()
         self.provider: str = provider.strip()
+        self.electricity_maps_zone: str = electricity_maps_zone.strip()
         self.max_cpu_capacity: Decimal = cpu
         self.max_memory_capacity: Decimal = mem
         self.current_utilization: Decimal = util
@@ -75,6 +77,11 @@ class Region:
         self.network_latency_ms: Decimal = lat
         self.is_available: bool = is_available
         self.is_active: bool = is_active
+
+    def projected_utilization(self, cpu_demand: Decimal) -> Decimal:
+        """Calculates projected utilization U_after = U_before + (cpu_demand / max_cpu_capacity)."""
+        delta_u = Decimal(str(cpu_demand)) / self.max_cpu_capacity
+        return self.current_utilization + delta_u
 
     @property
     def available_cpu(self) -> Decimal:

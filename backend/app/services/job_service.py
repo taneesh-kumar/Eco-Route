@@ -53,6 +53,8 @@ class JobService:
             memory_demand=payload.memory_demand,
             base_execution_duration=payload.base_execution_duration,
             priority=payload.priority,
+            priority_class=JobPriority(payload.priority).priority_class,
+            assigned_region_id=None,
             deadline=payload.deadline,
             status=JobStatus.PENDING.value,
             current_attempt_count=0,
@@ -136,7 +138,10 @@ class JobService:
         stmt = (
             select(Job)
             .where(Job.id == job_id)
-            .options(selectinload(Job.attempts))
+            .options(
+                selectinload(Job.attempts),
+                selectinload(Job.assigned_region),
+            )
         )
         res = await session.execute(stmt)
         return res.scalars().first()
@@ -150,7 +155,13 @@ class JobService:
     ) -> Tuple[List[Job], int]:
         """Lists jobs with optional status filter and total count."""
         count_stmt = select(func.count(Job.id))
-        query_stmt = select(Job).order_by(Job.created_at.desc()).limit(limit).offset(offset)
+        query_stmt = (
+            select(Job)
+            .options(selectinload(Job.assigned_region))
+            .order_by(Job.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
 
         if status:
             count_stmt = count_stmt.where(Job.status == status)

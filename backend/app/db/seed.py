@@ -14,6 +14,7 @@ DEFAULT_REGIONS = [
     {
         "code": "se-sto",
         "name": "Sweden Central (Stockholm)",
+        "electricity_maps_zone": "SE-SE3",
         "provider": "AWS",
         "country": "Sweden",
         "latitude": Decimal("59.329300"),
@@ -31,6 +32,7 @@ DEFAULT_REGIONS = [
     {
         "code": "fr-par",
         "name": "France Central (Paris)",
+        "electricity_maps_zone": "FR",
         "provider": "AWS",
         "country": "France",
         "latitude": Decimal("48.856600"),
@@ -48,6 +50,7 @@ DEFAULT_REGIONS = [
     {
         "code": "de-fra",
         "name": "Germany Central (Frankfurt)",
+        "electricity_maps_zone": "DE",
         "provider": "GCP",
         "country": "Germany",
         "latitude": Decimal("50.110900"),
@@ -65,6 +68,7 @@ DEFAULT_REGIONS = [
     {
         "code": "us-east",
         "name": "US East (N. Virginia)",
+        "electricity_maps_zone": "US-MIDA-PJM",
         "provider": "AWS",
         "country": "USA",
         "latitude": Decimal("38.130000"),
@@ -82,6 +86,7 @@ DEFAULT_REGIONS = [
     {
         "code": "pl-war",
         "name": "Poland Central (Warsaw)",
+        "electricity_maps_zone": "PL",
         "provider": "GCP",
         "country": "Poland",
         "latitude": Decimal("52.229700"),
@@ -99,6 +104,7 @@ DEFAULT_REGIONS = [
     {
         "code": "jp-tyo",
         "name": "Asia Pacific (Tokyo)",
+        "electricity_maps_zone": "JP-TK",
         "provider": "AWS",
         "country": "Japan",
         "latitude": Decimal("35.676200"),
@@ -116,6 +122,7 @@ DEFAULT_REGIONS = [
     {
         "code": "uk-lon",
         "name": "UK South (London)",
+        "electricity_maps_zone": "GB",
         "provider": "Azure",
         "country": "United Kingdom",
         "latitude": Decimal("51.507400"),
@@ -134,22 +141,30 @@ DEFAULT_REGIONS = [
 
 
 async def seed_default_regions(session: AsyncSession) -> int:
-    """Seeds default cloud regions if none exist in the database."""
-    result = await session.execute(select(Region.id).limit(1))
-    if result.scalars().first() is not None:
-        logger.debug("Cloud regions already seeded in PostgreSQL.")
-        return 0
+    """Seeds or updates default cloud regions ensuring explicit Electricity Maps zones."""
+    result = await session.execute(select(Region))
+    existing_regions = {r.code: r for r in result.scalars().all()}
 
-    logger.info("Seeding default global cloud regions into PostgreSQL...")
     count = 0
     for reg_data in DEFAULT_REGIONS:
-        region = Region(
-            id=uuid.uuid4(),
-            **reg_data,
-        )
-        session.add(region)
-        count += 1
+        code = reg_data["code"]
+        if code in existing_regions:
+            existing = existing_regions[code]
+            # Ensure zone is populated and correct
+            if getattr(existing, "electricity_maps_zone", None) != reg_data["electricity_maps_zone"]:
+                existing.electricity_maps_zone = reg_data["electricity_maps_zone"]
+                count += 1
+        else:
+            region = Region(
+                id=uuid.uuid4(),
+                **reg_data,
+            )
+            session.add(region)
+            count += 1
 
-    await session.commit()
-    logger.info(f"Successfully seeded {count} cloud regions.")
+    if count > 0:
+        await session.commit()
+        logger.info(f"Successfully seeded/updated {count} cloud regions.")
+    else:
+        logger.debug("Cloud regions already up to date in PostgreSQL.")
     return count

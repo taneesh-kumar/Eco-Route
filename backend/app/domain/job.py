@@ -32,6 +32,7 @@ class Job:
         status: JobStatus = JobStatus.PENDING,
         current_attempt_count: int = 0,
         max_retries: int = 3,
+        assigned_region_id: Optional[uuid.UUID] = None,
         created_at: Optional[datetime] = None,
     ) -> None:
         if not workload_name or not workload_name.strip():
@@ -69,6 +70,7 @@ class Job:
         self.status: JobStatus = status
         self.current_attempt_count: int = current_attempt_count
         self.max_retries: int = max_retries
+        self.assigned_region_id: Optional[uuid.UUID] = assigned_region_id
         self.created_at: datetime = created_at or datetime.now(timezone.utc)
 
     def transition_to(self, target_status: JobStatus, reason: str = "") -> None:

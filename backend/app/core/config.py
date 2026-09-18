@@ -35,8 +35,26 @@ class Settings(BaseSettings):
         description="Electricity Maps API auth token / API key",
     )
     ELECTRICITY_MAPS_API_URL: str = Field(
-        default="https://api.electricitymap.org/v3",
+        default="https://api.electricitymap.org/v4",
         description="Electricity Maps API base URL",
+    )
+    CARBON_CACHE_MAX_AGE_SECONDS: int = Field(
+        default=300,
+        description="Maximum freshness window in seconds for cached carbon observations",
+    )
+    CARBON_FORECAST_CACHE_MAX_AGE_SECONDS: int = Field(
+        default=1800,
+        description="Maximum freshness window in seconds for cached carbon forecasts",
+    )
+
+    # Deferral Policy Parameters
+    CARBON_DEFERRAL_MIN_RELATIVE_IMPROVEMENT: float = Field(
+        default=0.15,
+        description="Minimum relative carbon emissions improvement (0.15 = 15.0%) required to approve deferral",
+    )
+    CARBON_DEFERRAL_EPSILON: float = Field(
+        default=0.0,
+        description="Strict mathematical margin epsilon for Jr comparison in deferral gating",
     )
 
     # CORS

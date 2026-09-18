@@ -180,12 +180,20 @@ export function JobLifecycleTable({
 
                 {/* Region Assigned */}
                 <td className="px-4 py-4 font-mono text-xs">
-                  {job.assigned_region_id ? (
-                    <span className="text-emerald-400 font-medium bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  {job.status === "WAITING" ? (
+                    <span className="text-amber-400 font-mono text-xs bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      Awaiting Execution
+                    </span>
+                  ) : job.assigned_region_code ? (
+                    <span className="text-emerald-400 font-mono font-medium bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      {job.assigned_region_code}
+                    </span>
+                  ) : job.assigned_region_id ? (
+                    <span className="text-emerald-400 font-mono font-medium bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                       Assigned
                     </span>
                   ) : (
-                    <span className="text-slate-400">Unassigned</span>
+                    <span className="text-slate-500 font-mono text-xs">Unassigned</span>
                   )}
                 </td>
 

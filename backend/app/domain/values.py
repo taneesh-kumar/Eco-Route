@@ -54,10 +54,12 @@ class WorkloadDemand:
 
 @dataclass(frozen=True)
 class JobPriority:
-    """Priority level for workloads (1 to 10).
+    """Priority level for workloads (1 to 10) with explicit policy classes.
 
-    Invariants:
-    - 1 <= value <= 10
+    Semantics (Critical Rule #13):
+    - 1-3 = HIGH: Immediate execution preferred. Do not defer purely for carbon.
+    - 4-7 = MEDIUM: Balanced optimization. Deferral only when explicitly permitted by deadline policy.
+    - 8-10 = LOW: May defer for a meaningful carbon opportunity if deadline permits.
     """
     value: int
 
@@ -75,6 +77,21 @@ class JobPriority:
             raise InvalidJobConfigurationError(
                 f"Job priority must be between 1 and 10 inclusive, got {self.value}"
             )
+
+    @property
+    def priority_class(self) -> str:
+        """Explicit classification string: HIGH, MEDIUM, or LOW."""
+        if 1 <= self.value <= 3:
+            return "HIGH"
+        elif 4 <= self.value <= 7:
+            return "MEDIUM"
+        else:
+            return "LOW"
+
+    @property
+    def allows_carbon_deferral(self) -> bool:
+        """True if priority policy permits holding in WAITING for cleaner carbon forecast."""
+        return self.value >= 4  # LOW and eligible MEDIUM
 
 
 @dataclass(frozen=True)

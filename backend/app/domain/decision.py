@@ -1,9 +1,9 @@
 """SchedulingDecision domain entity capturing explainability metrics, scores, and outcomes."""
 
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
+import uuid
 
 from app.domain.carbon import CarbonQuality, CarbonSource
 from app.domain.exceptions import (
@@ -18,10 +18,12 @@ class SchedulingDecision:
     """Immutable record of an evaluated scheduling decision.
 
     Captures:
-    - Action: EXECUTE, DEFER (or REJECT if unviable/infeasible)
+    - Action: EXECUTE, DEFER, or REJECT
+    - Decision Mode: CARBON_AWARE, CONVENTIONAL_FALLBACK, or DEFERRED
     - Winning target region (mandatory if EXECUTE)
     - Mathematical score breakdown, weights, and candidate rankings
-    - Carbon quality and source with strict zero fabrication verification.
+    - Carbon quality, source, and explicit zero fabrication verification
+    - Baseline counterfactual conventional evaluation and estimated savings
     """
 
     def __init__(
@@ -41,6 +43,14 @@ class SchedulingDecision:
         estimated_energy_kwh: Optional[Decimal] = None,
         estimated_co2eq_grams: Optional[Decimal] = None,
         normalization_factors: Optional[Dict[str, Any]] = None,
+        decision_mode: str = "CARBON_AWARE",
+        carbon_optimization_applied: bool = True,
+        fallback_reason: Optional[str] = None,
+        baseline_strategy: Optional[str] = None,
+        baseline_region_id: Optional[uuid.UUID] = None,
+        baseline_energy_kwh: Optional[Decimal] = None,
+        baseline_co2eq_grams: Optional[Decimal] = None,
+        estimated_savings_co2eq_grams: Optional[Decimal] = None,
         created_at: Optional[datetime] = None,
     ) -> None:
         if isinstance(decision_action, str) and not isinstance(decision_action, DecisionAction):
@@ -60,7 +70,12 @@ class SchedulingDecision:
 
         # Invariant 2: Zero carbon fabrication
         # If carbon is UNAVAILABLE or CONVENTIONAL_FALLBACK, estimated_co2eq_grams must not be fabricated
-        if carbon_quality_used in (CarbonQuality.UNAVAILABLE, CarbonQuality.CONVENTIONAL_FALLBACK):
+        untrustworthy_qualities = (
+            CarbonQuality.UNAVAILABLE,
+            CarbonQuality.CONVENTIONAL_FALLBACK,
+            CarbonQuality.CACHE_STALE,
+        )
+        if carbon_quality_used in untrustworthy_qualities:
             if estimated_co2eq_grams is not None:
                 raise ZeroCarbonFabricationError(
                     f"estimated_co2eq_grams must be None when carbon quality is '{carbon_quality_used.value}'."
@@ -74,6 +89,20 @@ class SchedulingDecision:
         self.attempt_id: Optional[uuid.UUID] = attempt_id
         self.selected_region_id: Optional[uuid.UUID] = selected_region_id
         self.decision_action: DecisionAction = decision_action
+        self.decision_mode: str = decision_mode
+        self.carbon_optimization_applied: bool = carbon_optimization_applied
+        self.fallback_reason: Optional[str] = fallback_reason
+        self.baseline_strategy: Optional[str] = baseline_strategy
+        self.baseline_region_id: Optional[uuid.UUID] = baseline_region_id
+        self.baseline_energy_kwh: Optional[Decimal] = (
+            Decimal(str(baseline_energy_kwh)) if baseline_energy_kwh is not None else None
+        )
+        self.baseline_co2eq_grams: Optional[Decimal] = (
+            Decimal(str(baseline_co2eq_grams)) if baseline_co2eq_grams is not None else None
+        )
+        self.estimated_savings_co2eq_grams: Optional[Decimal] = (
+            Decimal(str(estimated_savings_co2eq_grams)) if estimated_savings_co2eq_grams is not None else None
+        )
         self.cost_score_jr: Optional[Decimal] = (
             Decimal(str(cost_score_jr)) if cost_score_jr is not None else None
         )

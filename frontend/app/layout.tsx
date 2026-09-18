@@ -24,7 +24,7 @@ export default function RootLayout({
                 Carbon-Aware Orchestration Engine
               </span>
               <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono">
-                Active &bull; Multi-Cloud
+                Active &bull; Simulated Multi-Region
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
