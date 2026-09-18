@@ -486,29 +486,66 @@ export function EarthGlobe({
     particlesGroup.clear();
 
     if (regions.length >= 2) {
-      const connections: [string, string][] = [
-        ["US-East", "EU-West"],
-        ["EU-West", "IN-WE"],
-        ["IN-WE", "East-Asia"],
-        ["US-West", "East-Asia"],
-        ["US-West", "SA-East"],
-        ["IN-WE", "AU-SE"],
-        ["East-Asia", "AU-SE"],
-      ];
+      const targetCode = activeRoute?.targetCode || selectedRegionCode;
+      const targetReg = targetCode ? regions.find((r) => r.code === targetCode) : null;
 
-      connections.forEach(([codeA, codeB]) => {
-        const regA = regions.find((r) => r.code === codeA);
-        const regB = regions.find((r) => r.code === codeB);
-        if (!regA || !regB) return;
+      const arcsToDraw: { fromLat: number; fromLng: number; toLat: number; toLng: number; isWinning: boolean }[] = [];
 
-        const isWinningRoute =
-          activeRoute?.targetCode === codeA || activeRoute?.targetCode === codeB;
+      if (targetReg) {
+        // Draw focused routing arcs from evaluated candidates (or origin) to winning region (capped to 6)
+        if (activeRoute?.origin) {
+          arcsToDraw.push({
+            fromLat: activeRoute.origin.lat,
+            fromLng: activeRoute.origin.lng,
+            toLat: Number(targetReg.latitude),
+            toLng: Number(targetReg.longitude),
+            isWinning: true,
+          });
+        }
 
+        const candidatePool = activeRoute?.candidateCodes
+          ? regions.filter((r) => r.code !== targetCode && activeRoute.candidateCodes?.includes(r.code)).slice(0, 5)
+          : regions.filter((r) => r.code !== targetCode).slice(0, 4);
+
+        for (const cand of candidatePool) {
+          arcsToDraw.push({
+            fromLat: Number(cand.latitude),
+            fromLng: Number(cand.longitude),
+            toLat: Number(targetReg.latitude),
+            toLng: Number(targetReg.longitude),
+            isWinning: true,
+          });
+        }
+      } else {
+        // Ambient default network backbone connecting major global regions (max 5 clean arcs)
+        const backbonePairs: [string, string][] = [
+          ["us-east-1", "eu-west-2"],
+          ["eu-central-1", "ap-south-1"],
+          ["ap-south-1", "ap-southeast-1"],
+          ["ap-southeast-1", "ap-northeast-1"],
+          ["us-west-2", "ap-northeast-1"],
+        ];
+        for (const [codeA, codeB] of backbonePairs) {
+          const rA = regions.find((r) => r.code === codeA);
+          const rB = regions.find((r) => r.code === codeB);
+          if (rA && rB) {
+            arcsToDraw.push({
+              fromLat: Number(rA.latitude),
+              fromLng: Number(rA.longitude),
+              toLat: Number(rB.latitude),
+              toLng: Number(rB.longitude),
+              isWinning: false,
+            });
+          }
+        }
+      }
+
+      arcsToDraw.forEach((arc) => {
         const { points, controlPoint } = createGreatCircleArc(
-          Number(regA.latitude),
-          Number(regA.longitude),
-          Number(regB.latitude),
-          Number(regB.longitude),
+          arc.fromLat,
+          arc.fromLng,
+          arc.toLat,
+          arc.toLng,
           1.0,
           0.2,
           48
@@ -516,16 +553,16 @@ export function EarthGlobe({
 
         const curveGeo = new THREE.BufferGeometry().setFromPoints(points);
         const curveMat = new THREE.LineBasicMaterial({
-          color: isWinningRoute ? 0x22c55e : 0x0ea5e9,
+          color: arc.isWinning ? 0x22c55e : 0x0ea5e9,
           transparent: true,
-          opacity: isWinningRoute ? 0.85 : 0.25,
+          opacity: arc.isWinning ? 0.85 : 0.25,
         });
         const arcLine = new THREE.Line(curveGeo, curveMat);
         arcsGroup.add(arcLine);
 
-        if (isWinningRoute) {
-          const v1 = latLngToVector3(Number(regA.latitude), Number(regA.longitude), 1.0);
-          const v2 = latLngToVector3(Number(regB.latitude), Number(regB.longitude), 1.0);
+        if (arc.isWinning) {
+          const v1 = latLngToVector3(arc.fromLat, arc.fromLng, 1.0);
+          const v2 = latLngToVector3(arc.toLat, arc.toLng, 1.0);
           const curve = new THREE.QuadraticBezierCurve3(v1, controlPoint, v2);
 
           const photonGeo = new THREE.SphereGeometry(0.015, 12, 12);

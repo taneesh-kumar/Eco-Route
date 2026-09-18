@@ -87,6 +87,7 @@ class DecisionEngine:
                     provider=r.provider,
                     max_cpu_capacity=r.max_cpu_capacity,
                     max_memory_capacity=r.max_memory_capacity,
+                    electricity_maps_zone=getattr(r, "electricity_maps_zone", "") or "",
                     current_utilization=r.current_utilization,
                     performance_factor=r.performance_factor,
                     idle_power_watts=r.idle_power_watts,

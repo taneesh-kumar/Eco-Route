@@ -12,7 +12,7 @@ export default function RegionsPage() {
   const [carbon, setCarbon] = useState<CarbonObservationResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedRegionCode, setSelectedRegionCode] = useState<string>("IN-WE");
+  const [selectedRegionCode, setSelectedRegionCode] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -57,13 +57,15 @@ export default function RegionsPage() {
               Global Cloud Topology
             </span>
             <span className="text-slate-600">&bull;</span>
-            <span className="text-xs text-slate-400 font-mono">7 Configured Regions</span>
+            <span className="text-xs text-slate-400 font-mono">
+              {regions.length > 0 ? `${regions.length} Active Regions` : "Discovering Topology..."}
+            </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
             Global <span className="text-[#22c55e]">Compute Grid</span>
           </h1>
           <p className="text-sm text-slate-300 mt-1.5 max-w-2xl">
-            Explore our 7 regions, real-time carbon data, hardware capacity, and workload activity.
+            Explore {regions.length > 0 ? `${regions.length}` : "all"} active compute regions, real-time carbon data, hardware capacity, and workload activity.
           </p>
         </div>
 
@@ -80,29 +82,18 @@ export default function RegionsPage() {
         </button>
       </div>
 
-      {/* Primary Split View: Left Region List + Center 3D Earth + Right Details (Matches Mockup #2) */}
+      {/* Primary Split View: Left Region List + Center 3D Earth + Right Details */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Region Cards List with Mini Sparklines (3 cols) */}
-        <div className="lg:col-span-3 space-y-2.5">
+        <div className="lg:col-span-3 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
           <div className="text-[11px] font-mono uppercase text-slate-400 tracking-wider font-semibold mb-2">
-            Compute Regions
+            Compute Regions ({regions.length})
           </div>
 
-          {(regions.length > 0
-            ? regions
-            : [
-                { code: "US-West", name: "US West (Oregon)", city: "The Dalles" },
-                { code: "US-East", name: "US East (N. Virginia)", city: "Ashburn" },
-                { code: "EU-West", name: "EU West (Frankfurt)", city: "Frankfurt" },
-                { code: "IN-WE", name: "India (Mumbai)", city: "Mumbai" },
-                { code: "East-Asia", name: "East Asia (Tokyo)", city: "Tokyo" },
-                { code: "SA-East", name: "South America (São Paulo)", city: "São Paulo" },
-                { code: "AU-SE", name: "Australia (Sydney)", city: "Sydney" },
-              ]
-          ).map((r: any, idx: number) => {
+          {regions.map((r: any, idx: number) => {
             const obs = carbonMap[r.code];
             const isSelected = selectedRegionCode === r.code;
-            const ci = obs?.carbon_intensity_gco2 != null ? Number(obs.carbon_intensity_gco2) : 42 + idx * 8;
+            const ci = obs?.carbon_intensity_gco2 != null ? Number(obs.carbon_intensity_gco2) : null;
 
             return (
               <div
@@ -120,7 +111,7 @@ export default function RegionsPage() {
                     {r.code}
                   </div>
                   <div className="text-[11px] text-emerald-400 font-bold mt-0.5">
-                    {ci.toFixed(0)} gCO₂/kWh
+                    {ci != null ? `${ci.toFixed(0)} gCO₂/kWh` : "Checking..."}
                   </div>
                 </div>
 

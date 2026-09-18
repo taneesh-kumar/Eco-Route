@@ -18,30 +18,43 @@ from app.persistence.repositories.carbon_observation_repository import (
 
 logger = logging.getLogger(__name__)
 
-# Standard cloud region and EcoRoute seeded codes to Electricity Maps zone mappings
+# Fallback legacy alias mappings (Database region.electricity_maps_zone is the primary source of truth)
 DEFAULT_ZONE_MAPPINGS: Dict[str, str] = {
-    # EcoRoute seeded region codes
+    # Legacy alias region codes
     "se-sto": "SE-SE3",       # Sweden Central (Stockholm)
     "fr-par": "FR",           # France Central (Paris)
     "de-fra": "DE",           # Germany Central (Frankfurt)
-    "us-east": "US-MIDA-PJM",  # US East (N. Virginia / Mid-Atlantic PJM)
+    "us-east": "US-MIDA-PJM",  # US East (N. Virginia)
     "pl-war": "PL",           # Poland Central (Warsaw)
     "jp-tyo": "JP-TK",        # Asia Pacific (Tokyo)
-    "uk-lon": "GB",           # UK South (London / Great Britain)
+    "uk-lon": "GB",           # UK South (London)
 
-    # Standard AWS / Cloud region identifiers
+    # Standard AWS region identifiers
     "us-east-1": "US-MIDA-PJM",
-    "us-east-2": "US-MIDA-PJM",
+    "us-east-2": "US-MIDW-MISO",
     "us-west-1": "US-CAL-CISO",
     "us-west-2": "US-NW-PACW",
+    "ca-central-1": "CA-QC",
+    "ca-west-1": "CA-AB",
+    "sa-east-1": "BR-CS",
+    "eu-north-1": "SE-SE3",
     "eu-west-1": "IE",
     "eu-west-2": "GB",
     "eu-west-3": "FR",
     "eu-central-1": "DE",
-    "eu-north-1": "SE-SE3",
+    "eu-central-2": "CH",
+    "eu-south-1": "IT-NO",
+    "eu-south-2": "ES",
+    "af-south-1": "ZA",
+    "me-central-1": "AE",
     "ap-northeast-1": "JP-TK",
+    "ap-northeast-2": "KR",
+    "ap-northeast-3": "JP-KN",
     "ap-southeast-1": "SG",
-    "ap-south-1": "IN",
+    "ap-southeast-2": "AUS-NSW",
+    "ap-southeast-4": "AUS-VIC",
+    "ap-south-1": "IN-WE",
+    "ap-south-2": "IN-SO",
 }
 
 

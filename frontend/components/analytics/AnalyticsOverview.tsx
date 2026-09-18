@@ -42,14 +42,13 @@ export function AnalyticsOverview({
   }
 
   // Workload regional distribution data
+  // Continental regional distribution data
   const regionalShare = [
-    { label: "US-West", pct: 18, color: "#3b82f6" },
-    { label: "US-East", pct: 14, color: "#06b6d4" },
-    { label: "EU-West", pct: 16, color: "#10b981" },
-    { label: "India", pct: 20, color: "#22c55e" },
-    { label: "East Asia", pct: 12, color: "#eab308" },
-    { label: "South America", pct: 8, color: "#f97316" },
-    { label: "Australia", pct: 12, color: "#a855f7" },
+    { label: "Europe (Clean Grid)", pct: 32, color: "#22c55e" },
+    { label: "North America", pct: 28, color: "#3b82f6" },
+    { label: "Asia-Pacific", pct: 22, color: "#06b6d4" },
+    { label: "India & South Asia", pct: 10, color: "#eab308" },
+    { label: "South America & Others", pct: 8, color: "#a855f7" },
   ];
 
   // Cumulative angles for SVG donut

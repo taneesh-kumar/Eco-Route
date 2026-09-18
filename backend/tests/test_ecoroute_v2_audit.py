@@ -22,17 +22,29 @@ from app.scheduling.normalizer import MetricBounds, Normalizer
 class TestEcoRouteV2Audit:
     def test_all_configured_regions_have_valid_zone_mappings(self):
         """Rule 1 & Audit: Verify all seed regions have valid, non-empty electricity_maps_zone."""
+        from app.carbon.service import DEFAULT_ZONE_MAPPINGS
         region_codes = {r["code"]: r["electricity_maps_zone"] for r in DEFAULT_REGIONS}
         
-        # Verify us-east is US-MIDA-PJM (not broken US-MIDW-PJM)
-        assert region_codes.get("us-east") == "US-MIDA-PJM"
-        assert region_codes.get("se-sto") == "SE-SE3"
-        assert region_codes.get("fr-par") == "FR"
-        assert region_codes.get("de-fra") == "DE"
-        assert region_codes.get("pl-war") == "PL"
-        assert region_codes.get("jp-tyo") == "JP-TK"
-        assert region_codes.get("uk-lon") == "GB"
+        # Verify canonical AWS regions have verified Electricity Maps zones
+        assert region_codes.get("us-east-1") == "US-MIDA-PJM"
+        assert region_codes.get("eu-north-1") == "SE-SE3"
+        assert region_codes.get("eu-west-3") == "FR"
+        assert region_codes.get("eu-central-1") == "DE"
+        assert region_codes.get("ap-northeast-1") == "JP-TK"
+        assert region_codes.get("eu-west-2") == "GB"
+        assert region_codes.get("ap-south-1") == "IN-WE"
 
+        # Verify legacy alias mappings remain intact
+        assert DEFAULT_ZONE_MAPPINGS.get("us-east") == "US-MIDA-PJM"
+        assert DEFAULT_ZONE_MAPPINGS.get("se-sto") == "SE-SE3"
+        assert DEFAULT_ZONE_MAPPINGS.get("fr-par") == "FR"
+        assert DEFAULT_ZONE_MAPPINGS.get("de-fra") == "DE"
+        assert DEFAULT_ZONE_MAPPINGS.get("pl-war") == "PL"
+        assert DEFAULT_ZONE_MAPPINGS.get("jp-tyo") == "JP-TK"
+        assert DEFAULT_ZONE_MAPPINGS.get("uk-lon") == "GB"
+
+        # Verify all 25 canonical regions are populated with non-empty zones
+        assert len(DEFAULT_REGIONS) >= 20
         for r in DEFAULT_REGIONS:
             assert r["electricity_maps_zone"] is not None
             assert len(r["electricity_maps_zone"]) > 0

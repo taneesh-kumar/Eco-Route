@@ -263,33 +263,21 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
           <div className="lg:col-span-4 space-y-2">
             <div className="text-[11px] font-mono uppercase text-slate-400 tracking-wider font-semibold mb-2 flex items-center justify-between">
               <span>Candidate Regions</span>
-              <span className="text-[#22c55e]">{candidateRankings.length || 7} Evaluated</span>
+              <span className="text-[#22c55e]">{candidateRankings.length} Evaluated</span>
             </div>
 
-            <div className="space-y-2">
-              {(candidateRankings.length > 0
-                ? candidateRankings
-                : [
-                    { region_code: "US-West", composite_score: 0.72 },
-                    { region_code: "US-East", composite_score: 0.81 },
-                    { region_code: "EU-West", composite_score: 0.68 },
-                    { region_code: "India", composite_score: 0.81 },
-                    { region_code: "East Asia", composite_score: 0.55 },
-                    { region_code: "South America", composite_score: 0.62 },
-                    { region_code: "Australia", composite_score: 0.58 },
-                  ]
-              ).map((cand: any, idx: number) => {
+            <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+              {candidateRankings.map((cand: any, idx: number) => {
                 const isSelected =
                   cand.region_code === selectedRegionCode ||
-                  cand.rank === 1 ||
-                  (!selectedRegionCode && idx === 3);
+                  cand.rank === 1;
 
                 const score =
                   cand.composite_score != null
                     ? Number(cand.composite_score).toFixed(2)
                     : cand.cost_score_jr != null
                     ? Number(cand.cost_score_jr).toFixed(2)
-                    : (0.55 + (idx % 4) * 0.08).toFixed(2);
+                    : "--";
 
                 return (
                   <div

@@ -66,6 +66,8 @@ class RankedCandidate:
             "emissions_co2eq": str(self.estimate.emissions_co2eq) if self.estimate.emissions_co2eq is not None else None,
             "carbon_quality": self.carbon.quality.value,
             "carbon_source": self.carbon.source.value,
+            "carbon_data_status": "LIVE" if self.carbon.quality.value.startswith("LIVE") else ("CACHE" if self.carbon.quality.value == "CACHE_VALID" else "UNAVAILABLE"),
+            "is_trustworthy": self.carbon.is_trustworthy,
             "carbon_intensity": str(self.carbon.value) if self.carbon.value is not None else None,
             "carbon_intensity_gco2": float(self.carbon.value) if self.carbon.value is not None else None,
             "network_latency_ms": str(self.region.network_latency_ms),
