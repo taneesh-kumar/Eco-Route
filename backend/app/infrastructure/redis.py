@@ -54,5 +54,9 @@ async def close_redis_connections() -> None:
     global _redis_client
     if _redis_client is not None:
         logger.info("Closing Redis connections...")
-        await _redis_client.aclose()
-        _redis_client = None
+        try:
+            await _redis_client.aclose()
+        except Exception as exc:
+            logger.debug(f"Redis connection close exception (ignored during shutdown): {exc}")
+        finally:
+            _redis_client = None

@@ -43,27 +43,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging(settings.LOG_LEVEL)
     logger.info(f"Starting EcoRoute backend in {settings.ENVIRONMENT} mode...")
 
-    # Launch background execution worker, deferral sweep, and dispatcher recovery loop
-    worker = ExecutionWorker(worker_id="backend-worker-01")
-    evaluator = DeferredJobEvaluator()
-    dispatcher = ExecutionDispatcher()
+    worker = None
+    evaluator = None
+    worker_task = None
+    evaluator_task = None
+    recovery_task = None
 
-    worker_task = asyncio.create_task(worker.run_loop(poll_interval=0.5))
-    evaluator_task = asyncio.create_task(evaluator.run_deferral_loop(sweep_interval=3.0))
-    recovery_task = asyncio.create_task(run_recovery_loop(dispatcher, poll_interval=5.0))
+    # Launch embedded execution worker, deferral sweep, and dispatcher recovery loop if enabled
+    if settings.RUN_EMBEDDED_WORKER:
+        logger.info("Initializing embedded ExecutionWorker, DeferredJobEvaluator, and RecoveryLoop...")
+        worker = ExecutionWorker(worker_id="backend-embedded-worker")
+        evaluator = DeferredJobEvaluator()
+        dispatcher = ExecutionDispatcher()
+
+        worker_task = asyncio.create_task(worker.run_loop(poll_interval=0.5))
+        evaluator_task = asyncio.create_task(evaluator.run_deferral_loop(sweep_interval=3.0))
+        recovery_task = asyncio.create_task(run_recovery_loop(dispatcher, poll_interval=5.0))
+    else:
+        logger.info("Embedded ExecutionWorker disabled (RUN_EMBEDDED_WORKER=false). Operating in pure API mode.")
 
     yield
 
     logger.info("Shutting down EcoRoute backend...")
-    worker.stop()
-    evaluator.stop()
-    worker_task.cancel()
-    evaluator_task.cancel()
-    recovery_task.cancel()
-    try:
-        await asyncio.gather(worker_task, evaluator_task, recovery_task, return_exceptions=True)
-    except Exception:
-        pass
+    if settings.RUN_EMBEDDED_WORKER:
+        if worker:
+            worker.stop()
+        if evaluator:
+            evaluator.stop()
+        if worker_task:
+            worker_task.cancel()
+        if evaluator_task:
+            evaluator_task.cancel()
+        if recovery_task:
+            recovery_task.cancel()
+        try:
+            tasks_to_gather = [t for t in (worker_task, evaluator_task, recovery_task) if t is not None]
+            if tasks_to_gather:
+                await asyncio.gather(*tasks_to_gather, return_exceptions=True)
+        except Exception:
+            pass
 
     await close_db_connections()
     await close_redis_connections()

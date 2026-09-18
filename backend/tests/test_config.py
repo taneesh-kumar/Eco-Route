@@ -13,6 +13,7 @@ def test_default_settings():
     assert settings.REDIS_URL is None
     assert settings.ELECTRICITY_MAPS_API_URL == "https://api.electricitymap.org/v4"
     assert "http://localhost:3000" in settings.CORS_ORIGINS
+    assert settings.RUN_EMBEDDED_WORKER is True
     assert not settings.is_production
 
 
@@ -24,6 +25,7 @@ def test_custom_settings(monkeypatch):
     monkeypatch.setenv("REDIS_URL", "redis://redis.cloud:6379/0")
     monkeypatch.setenv("ELECTRICITY_MAPS_API_KEY", "test-token-123")
     monkeypatch.setenv("ELECTRICITY_MAPS_API_URL", "https://custom-api.electricitymap.org/v3")
+    monkeypatch.setenv("RUN_EMBEDDED_WORKER", "false")
 
     settings = Settings(_env_file=None)
     assert settings.ENVIRONMENT == "production"
@@ -33,6 +35,7 @@ def test_custom_settings(monkeypatch):
     assert settings.REDIS_URL == "redis://redis.cloud:6379/0"
     assert settings.ELECTRICITY_MAPS_API_KEY == "test-token-123"
     assert settings.ELECTRICITY_MAPS_API_URL == "https://custom-api.electricitymap.org/v3"
+    assert settings.RUN_EMBEDDED_WORKER is False
     assert settings.is_production
 
 
@@ -40,6 +43,18 @@ def test_get_settings_caching():
     s1 = get_settings()
     s2 = get_settings()
     assert s1 is s2
+
+
+@pytest.mark.asyncio
+async def test_lifespan_without_embedded_worker(monkeypatch):
+    """Verifies that FastAPI lifespan starts and stops cleanly in pure API mode."""
+    settings = Settings(_env_file=None, RUN_EMBEDDED_WORKER=False)
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    app = create_app()
+
+    async with app.router.lifespan_context(app):
+        # In pure API mode, lifespan initializes without creating background worker tasks
+        pass
 
 
 @pytest.mark.asyncio

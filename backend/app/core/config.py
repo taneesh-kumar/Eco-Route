@@ -68,6 +68,12 @@ class Settings(BaseSettings):
         description="Allowed CORS origins",
     )
 
+    # Worker Lifespan Mode
+    RUN_EMBEDDED_WORKER: bool = Field(
+        default=True,
+        description="Whether to run the embedded ExecutionWorker and background loops inside FastAPI lifespan",
+    )
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() in {"production", "prod"}
