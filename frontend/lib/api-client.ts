@@ -39,8 +39,9 @@ export class ApiClient {
   private baseUrl: string;
 
   constructor(config?: ApiClientConfig) {
-    this.baseUrl =
+    const rawUrl =
       config?.baseUrl || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    this.baseUrl = rawUrl.replace(/\/+$/, "");
   }
 
   public getBaseUrl(): string {

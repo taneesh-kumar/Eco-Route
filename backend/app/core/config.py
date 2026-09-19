@@ -1,6 +1,7 @@
+import json
 from functools import lru_cache
-from typing import List, Optional
-from pydantic import Field
+from typing import List, Optional, Union
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +23,20 @@ class Settings(BaseSettings):
         default=None,
         description="PostgreSQL async connection string (postgresql+asyncpg://...)",
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_database_url(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if v.startswith("postgres://"):
+            return "postgresql+asyncpg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://") and not v.startswith("postgresql+"):
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     # Redis Cache & Locks
     REDIS_URL: Optional[str] = Field(
@@ -63,10 +78,29 @@ class Settings(BaseSettings):
     )
 
     # CORS
-    CORS_ORIGINS: List[str] = Field(
+    CORS_ORIGINS: Union[List[str], str] = Field(
         default=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
-        description="Allowed CORS origins",
+        description="Allowed CORS origins (accepts list, JSON string, or comma-separated string)",
     )
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        elif isinstance(v, (list, tuple, set)):
+            return [str(item).strip() for item in v if str(item).strip()]
+        return v
 
     # Worker Lifespan Mode
     RUN_EMBEDDED_WORKER: bool = Field(
