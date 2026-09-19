@@ -51,6 +51,7 @@ export function EarthGlobe({
   const [projectedTags, setProjectedTags] = useState<ProjectedRegionTag[]>([]);
   const [autoRotate, setAutoRotate] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [webGlSupported, setWebGlSupported] = useState<boolean>(true);
 
   // References for Three.js scene instances
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -119,19 +120,27 @@ export function EarthGlobe({
     camera.position.set(0, 0, 3.0);
     cameraRef.current = camera;
 
-    // 2. Renderer with Filmic Tone Mapping
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: "high-performance",
-    });
-    renderer.setSize(width, heightPx);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
-    container.innerHTML = "";
-    container.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
+    // 2. Renderer with Safe WebGL Context Detection
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: "default",
+        failIfMajorPerformanceCaveat: false,
+      });
+      renderer.setSize(width, heightPx);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.35;
+      container.innerHTML = "";
+      container.appendChild(renderer.domElement);
+      rendererRef.current = renderer;
+    } catch (err) {
+      console.warn("WebGL not supported or context creation failed:", err);
+      setWebGlSupported(false);
+      return;
+    }
 
     // 3. Globe Main Group
     const globeGroup = new THREE.Group();
@@ -619,6 +628,64 @@ export function EarthGlobe({
   const zoomOut = () => {
     targetDistanceRef.current = Math.min(4.8, targetDistanceRef.current + 0.4);
   };
+
+  if (!webGlSupported) {
+    return (
+      <div
+        className={`relative rounded-3xl overflow-hidden select-none bg-gradient-to-b from-[#091122] to-[#040813] border border-white/[0.08] p-6 flex flex-col justify-between ${className}`}
+        style={{ height }}
+      >
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="flex items-center gap-2">
+              <Leaf className="w-4 h-4 text-[#22c55e]" />
+              <span className="font-bold text-sm text-white font-sans">Global Carbon Grid View</span>
+            </div>
+            <span className="text-[10px] font-mono text-slate-400 bg-white/[0.05] px-2.5 py-1 rounded-full border border-white/[0.05]">
+              2D High-Performance Fallback
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[480px] overflow-y-auto pr-1">
+            {regions.map((region) => {
+              const obs = carbonMap.current[region.code];
+              const intensity = obs && obs.carbon_intensity_gco2 != null ? Number(obs.carbon_intensity_gco2) : null;
+              const isSelected = selectedRegionCode === region.code;
+              const isHigh = intensity != null && intensity > 150;
+
+              return (
+                <button
+                  key={region.code}
+                  onClick={() => onSelectRegion?.(region.code)}
+                  className={`p-3 rounded-2xl border text-left transition cursor-pointer backdrop-blur-md ${
+                    isSelected
+                      ? "bg-[#0c1833] border-[#22c55e] text-white shadow-[0_0_20px_rgba(34,197,94,0.3)]"
+                      : "bg-[#091122]/70 border-white/[0.08] hover:border-slate-500 text-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="font-bold text-xs text-white truncate">{region.name}</span>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase">{region.code}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono mt-2">
+                    <span className="text-slate-400 text-[10px]">Intensity:</span>
+                    <span className={`font-bold ${isHigh ? "text-amber-400" : "text-[#22c55e]"}`}>
+                      {intensity != null ? `${intensity.toFixed(0)} gCO₂` : "Verified"}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06] text-[11px] text-slate-400 font-mono">
+          <span>Tip: Enable browser hardware acceleration to view interactive 3D Globe</span>
+          <span className="text-[#22c55e]">{regions.length} Regions Active</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
