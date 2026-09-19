@@ -221,10 +221,10 @@ export function ReactGlobeEngine({
       ci === null || ci === undefined
         ? "#94a3b8"
         : ci > 400
-        ? "#f97316"
-        : ci > 150
-        ? "#eab308"
-        : "#22c55e";
+          ? "#f97316"
+          : ci > 150
+            ? "#eab308"
+            : "#22c55e";
 
     return [
       {
@@ -238,10 +238,10 @@ export function ReactGlobeEngine({
           return ringColor === "#22c55e"
             ? `rgba(34, 197, 94, ${alpha * 0.75})`
             : ringColor === "#f97316"
-            ? `rgba(249, 115, 22, ${alpha * 0.75})`
-            : ringColor === "#eab308"
-            ? `rgba(234, 179, 8, ${alpha * 0.75})`
-            : `rgba(148, 163, 184, ${alpha * 0.6})`;
+              ? `rgba(249, 115, 22, ${alpha * 0.75})`
+              : ringColor === "#eab308"
+                ? `rgba(234, 179, 8, ${alpha * 0.75})`
+                : `rgba(148, 163, 184, ${alpha * 0.6})`;
         },
       },
     ];
@@ -280,8 +280,8 @@ export function ReactGlobeEngine({
       // Candidate evaluated regions converging to target
       const candidatePool = activeRoute?.candidateCodes
         ? regions
-            .filter((r) => r.code !== targetCode && activeRoute.candidateCodes?.includes(r.code))
-            .slice(0, 5)
+          .filter((r) => r.code !== targetCode && activeRoute.candidateCodes?.includes(r.code))
+          .slice(0, 5)
         : regions.filter((r) => r.code !== targetCode).slice(0, 4);
 
       for (const cand of candidatePool) {
@@ -480,11 +480,10 @@ export function ReactGlobeEngine({
                 <button
                   key={region.code}
                   onClick={() => onSelectRegion?.(region.code)}
-                  className={`p-3 rounded-2xl border text-left transition cursor-pointer backdrop-blur-md ${
-                    isSelected
+                  className={`p-3 rounded-2xl border text-left transition cursor-pointer backdrop-blur-md ${isSelected
                       ? "bg-[#0c1833] border-[#22c55e] text-white shadow-[0_0_20px_rgba(34,197,94,0.3)]"
                       : "bg-[#091122]/70 border-white/[0.08] hover:border-slate-500 text-slate-200"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between gap-1 mb-1">
                     <span className="font-bold text-xs text-white truncate">{region.name}</span>

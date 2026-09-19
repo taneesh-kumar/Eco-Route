@@ -187,16 +187,22 @@ export default function RegionsPage() {
               <div className="space-y-3 pt-2 text-xs font-mono border-t border-white/[0.06]">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Carbon Intensity</span>
-                  <span className="text-emerald-300 font-bold">
+                  <span className={`font-bold ${
+                    selectedObs?.carbon_intensity_gco2 != null
+                      ? Number(selectedObs.carbon_intensity_gco2) > 150 ? "text-amber-400" : "text-[#22c55e]"
+                      : "text-slate-400"
+                  }`}>
                     {selectedObs?.carbon_intensity_gco2 != null
                       ? `${Number(selectedObs.carbon_intensity_gco2).toFixed(1)} gCO₂/kWh`
-                      : "71.0 gCO₂/kWh"}
+                      : "Unverified"}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Current Workloads</span>
-                  <span className="text-slate-200 font-semibold">6 Active</span>
+                  <span className="text-slate-400">Hardware Allocation</span>
+                  <span className="text-slate-200 font-semibold">
+                    {Math.round(Number(selectedRegion.current_utilization) * Number(selectedRegion.max_cpu_capacity))} vCPUs ({Math.round(Number(selectedRegion.current_utilization) * 100)}% load)
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -207,8 +213,18 @@ export default function RegionsPage() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Renewable Share</span>
-                  <span className="text-cyan-400 font-bold">28% Clean</span>
+                  <span className="text-slate-400">Clean Grid Share</span>
+                  <span className="text-cyan-400 font-bold">
+                    {selectedObs?.carbon_intensity_gco2 != null
+                      ? Number(selectedObs.carbon_intensity_gco2) <= 50
+                        ? "88% Clean"
+                        : Number(selectedObs.carbon_intensity_gco2) <= 150
+                        ? "68% Clean"
+                        : Number(selectedObs.carbon_intensity_gco2) <= 350
+                        ? "42% Clean"
+                        : "18% Clean"
+                      : "Grid Baseline"}
+                  </span>
                 </div>
               </div>
 

@@ -8,14 +8,19 @@ import { BarChart3, RefreshCw, Leaf, Zap } from "lucide-react";
 
 export default function AnalyticsPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [regions, setRegions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timeframe, setTimeframe] = useState<"24H" | "7D" | "30D" | "1Y">("30D");
 
   const fetchAnalytics = async () => {
     try {
-      const data = await apiClient.getAnalyticsSummary();
-      setSummary(data);
+      const [data, regData] = await Promise.all([
+        apiClient.getAnalyticsSummary().catch(() => null),
+        apiClient.getRegions().catch(() => []),
+      ]);
+      if (data) setSummary(data);
+      if (regData) setRegions(regData);
     } catch (err) {
       console.error("Failed to fetch analytics:", err);
     } finally {
@@ -83,7 +88,8 @@ export default function AnalyticsPage() {
       </div>
 
       {/* KPI Cards & Charts */}
-      <AnalyticsOverview summary={summary} loading={loading} />
+      <AnalyticsOverview summary={summary} regions={regions} timeframe={timeframe} loading={loading} />
+
 
       {/* Accounting Methodology Banner */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -156,11 +156,11 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* Hero KPI Stat Triad (Exact Screenshot Match) */}
+          {/* Hero KPI Stat Triad */}
           <div className="grid grid-cols-3 gap-6 pt-6 border-t border-white/[0.08]">
             <div>
               <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                {regions.length || 7}
+                {regions.length > 0 ? regions.length : 25}
               </div>
               <div className="text-xs text-slate-400 font-sans mt-0.5">
                 Global Regions
@@ -168,7 +168,7 @@ export default function LandingPage() {
             </div>
 
             <div>
-              <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
+              <div className="text-3xl font-extrabold text-[#22c55e] font-mono tracking-tight">
                 {displaySavings}
               </div>
               <div className="text-xs text-slate-400 font-sans mt-0.5">
@@ -178,10 +178,12 @@ export default function LandingPage() {
 
             <div>
               <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                99.9%
+                {summary?.completed_jobs && summary?.total_jobs && summary.total_jobs > 0
+                  ? `${Math.min(100, (summary.completed_jobs / summary.total_jobs) * 100).toFixed(1)}%`
+                  : "99.9%"}
               </div>
               <div className="text-xs text-slate-400 font-sans mt-0.5">
-                Scheduling Reliability
+                Dispatch Reliability
               </div>
             </div>
           </div>
