@@ -69,27 +69,27 @@ const pipelineSteps: StepInfo[] = [
 
 export function PipelineVisualizer({ isSubmitting = false }: PipelineVisualizerProps) {
   const [activeStep, setActiveStep] = useState<number>(1);
-  const [isSimulating, setIsSimulating] = useState<boolean>(true);
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  // Auto-step sequence simulation loop
+  // Execution flow animation: only triggers during active workload submission or explicit single-shot trace
   useEffect(() => {
-    if (!isSimulating && !isSubmitting) return;
+    if (!isSubmitting && !isSimulating) return;
 
+    setActiveStep(1);
+    let current = 1;
     const interval = setInterval(() => {
-      setActiveStep((prev) => (prev >= 5 ? 1 : prev + 1));
-    }, 2400);
+      current += 1;
+      if (current > 5) {
+        clearInterval(interval);
+        setIsSimulating(false);
+      } else {
+        setActiveStep(current);
+      }
+    }, 700);
 
     return () => clearInterval(interval);
-  }, [isSimulating, isSubmitting]);
-
-  // If external submission is triggered, force animation to flow
-  useEffect(() => {
-    if (isSubmitting) {
-      setActiveStep(1);
-      setIsSimulating(true);
-    }
-  }, [isSubmitting]);
+  }, [isSubmitting, isSimulating]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -101,6 +101,8 @@ export function PipelineVisualizer({ isSubmitting = false }: PipelineVisualizerP
   const handleMouseLeave = () => {
     setMousePos({ x: 0, y: 0 });
   };
+
+  const isRunning = isSubmitting || isSimulating;
 
   return (
     <div
@@ -125,16 +127,24 @@ export function PipelineVisualizer({ isSubmitting = false }: PipelineVisualizerP
           <div>
             <div className="flex items-center gap-2 text-xs font-mono text-[#22c55e] font-bold">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22c55e] opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22c55e]" />
+                {isRunning ? (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22c55e] opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22c55e]" />
+                  </>
+                ) : (
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22c55e]/80" />
+                )}
               </span>
-              <span>Autonomous Lifecycle</span>
+              <span>{isRunning ? "Active Optimization Pipeline" : "Autonomous Lifecycle"}</span>
             </div>
             <h3 className="text-xl font-extrabold text-white mt-1 tracking-tight">
               What Happens Next?
             </h3>
             <p className="text-xs text-slate-300 mt-0.5">
-              Live multi-stage spatial carbon optimization pipeline.
+              {isRunning
+                ? "Evaluating real-time spatial carbon telemetry & compute dispatch..."
+                : "Multi-stage spatial carbon optimization pipeline."}
             </p>
           </div>
 
@@ -142,13 +152,13 @@ export function PipelineVisualizer({ isSubmitting = false }: PipelineVisualizerP
             type="button"
             onClick={() => {
               setIsSimulating(true);
-              setActiveStep(1);
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-mono font-medium transition cursor-pointer shadow-md"
-            title="Replay Execution Sequence"
+            disabled={isRunning}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 disabled:opacity-50 text-slate-300 hover:text-white border border-slate-700 text-xs font-mono font-medium transition cursor-pointer shadow-md"
+            title="Preview Execution Flow"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-[#22c55e]" />
-            <span className="hidden sm:inline">Trace</span>
+            <RotateCcw className={`w-3.5 h-3.5 text-[#22c55e] ${isRunning ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">{isRunning ? "Running" : "Preview"}</span>
           </button>
         </div>
 
@@ -156,9 +166,9 @@ export function PipelineVisualizer({ isSubmitting = false }: PipelineVisualizerP
         <div className="space-y-3 relative">
           {/* Vertical Bus Conduit */}
           <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-slate-800/80 -z-0">
-            {/* Animated Laser Photon Flow */}
+            {/* Laser Photon Conduit */}
             <div
-              className="w-full bg-gradient-to-b from-[#22c55e] via-emerald-400 to-transparent transition-all duration-500 shadow-[0_0_10px_#22c55e]"
+              className="w-full bg-gradient-to-b from-[#22c55e] via-emerald-400 to-transparent transition-all duration-300 shadow-[0_0_10px_#22c55e]"
               style={{
                 height: `${((activeStep - 1) / 4) * 100}%`,
               }}

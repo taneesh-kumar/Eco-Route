@@ -94,6 +94,25 @@ export default function RegionsPage() {
             const obs = carbonMap[r.code];
             const isSelected = selectedRegionCode === r.code;
             const ci = obs?.carbon_intensity_gco2 != null ? Number(obs.carbon_intensity_gco2) : null;
+            const sparklineColor =
+              ci === null
+                ? "#94a3b8"
+                : ci > 400
+                ? "#f97316"
+                : ci > 150
+                ? "#eab308"
+                : "#22c55e";
+
+            const lat = Number(r.latitude) || 0;
+            const lng = Number(r.longitude) || 0;
+            const util = Number(r.current_utilization) || 0.3;
+            const cVal = ci != null ? ci : 50 + (Math.abs(Math.sin(lat + lng)) * 120);
+
+            const y1 = Math.round(20 - util * 12);
+            const y2 = Math.round(4 + ((cVal % 100) / 100) * 14);
+            const y3 = Math.round(18 - Math.abs(Math.sin(lat)) * 12);
+            const y4 = Math.round(6 + Math.abs(Math.cos(lng)) * 14);
+            const sparklinePath = `M 0,${y1} Q 15,${y2} 30,${y3} T 60,${y4}`;
 
             return (
               <div
@@ -110,24 +129,18 @@ export default function RegionsPage() {
                     <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-[#22c55e] animate-pulse" : "bg-slate-600"}`} />
                     {r.code}
                   </div>
-                  <div className="text-[11px] text-emerald-400 font-bold mt-0.5">
-                    {ci != null ? `${ci.toFixed(0)} gCO₂/kWh` : "Checking..."}
+                  <div className="text-[11px] font-bold mt-0.5" style={{ color: sparklineColor }}>
+                    {ci != null ? `${ci.toFixed(0)} gCO₂/kWh` : "Unverified"}
                   </div>
                 </div>
 
-                {/* Mini SVG Sparkline */}
+                {/* Dynamic SVG Sparkline */}
                 <div className="w-16 h-7">
                   <svg className="w-full h-full" viewBox="0 0 60 25">
                     <path
-                      d={
-                        idx % 3 === 0
-                          ? "M 0,18 Q 15,5 30,12 T 60,8"
-                          : idx % 2 === 0
-                          ? "M 0,12 Q 20,20 40,6 T 60,10"
-                          : "M 0,20 Q 20,10 40,15 T 60,5"
-                      }
+                      d={sparklinePath}
                       fill="none"
-                      stroke="#22c55e"
+                      stroke={sparklineColor}
                       strokeWidth="1.8"
                     />
                   </svg>
