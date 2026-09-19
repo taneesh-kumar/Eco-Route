@@ -10,8 +10,7 @@ const DynamicGlobeEngine = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-full min-h-[480px] rounded-3xl bg-gradient-to-b from-[#091122] to-[#040813] border border-white/[0.08] flex flex-col items-center justify-center text-slate-400 font-mono text-xs p-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.08)_0%,transparent_70%)]" />
+      <div className="w-full h-full min-h-[480px] flex flex-col items-center justify-center text-slate-400 font-mono text-xs p-6 relative">
         <div className="flex flex-col items-center gap-3 relative z-10">
           <div className="relative flex h-8 w-8 items-center justify-center">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22c55e] opacity-40" />

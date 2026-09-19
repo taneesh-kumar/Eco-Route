@@ -13,6 +13,7 @@ import {
   SchedulingDecisionResponse,
 } from "@/lib/types";
 import { EarthGlobe } from "@/components/globe/EarthGlobe";
+import { SpaceStarfield } from "@/components/globe/SpaceStarfield";
 import { WorkloadForm } from "@/components/jobs/WorkloadForm";
 import { JobLifecycleTable } from "@/components/jobs/JobLifecycleTable";
 import { RegionGrid } from "@/components/regions/RegionGrid";
@@ -122,75 +123,10 @@ export default function LandingPage() {
         activeWorkloadsCount={summary?.running_jobs || 0}
       />
 
-      {/* HERO SECTION — EXACT SCREENSHOT MATCH */}
-      <section className="relative min-h-[580px] flex flex-col lg:flex-row items-center justify-between gap-8 pt-2 pb-6">
-        {/* Left Column: Bold Hero Typography & CTAs */}
-        <div className="w-full lg:w-5/12 space-y-7 z-10">
-          <div className="space-y-3">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-[1.08] font-sans">
-              A cleaner <br />
-              cloud for a <br />
-              <span className="text-[#22c55e] drop-shadow-[0_0_35px_rgba(34,197,94,0.4)]">
-                brighter tomorrow.
-              </span>
-            </h1>
-            <p className="text-base text-slate-300 font-sans leading-relaxed max-w-lg pt-2">
-              EcoRoute intelligently schedules workloads across global regions to minimize carbon emissions while meeting performance goals.
-            </p>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-4 pt-1">
-            <button
-              onClick={() => setShowDispatchModal(true)}
-              className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#22c55e] hover:bg-[#16a34a] text-slate-950 font-bold text-sm shadow-[0_0_25px_rgba(34,197,94,0.35)] hover:shadow-[0_0_35px_rgba(34,197,94,0.5)] transition-all cursor-pointer font-sans"
-            >
-              Run a Workload <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <Link
-              href="/regions"
-              className="inline-flex items-center gap-1.5 px-4 py-3.5 rounded-xl text-slate-300 hover:text-white text-sm font-semibold transition group"
-            >
-              Explore the System <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </div>
-
-          {/* Hero KPI Stat Triad */}
-          <div className="grid grid-cols-3 gap-6 pt-6 border-t border-white/[0.08]">
-            <div>
-              <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                {regions.length > 0 ? regions.length : 25}
-              </div>
-              <div className="text-xs text-slate-400 font-sans mt-0.5">
-                Global Regions
-              </div>
-            </div>
-
-            <div>
-              <div className="text-3xl font-extrabold text-[#22c55e] font-mono tracking-tight">
-                {displaySavings}
-              </div>
-              <div className="text-xs text-slate-400 font-sans mt-0.5">
-                Lower Emissions
-              </div>
-            </div>
-
-            <div>
-              <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                {summary?.completed_jobs && summary?.total_jobs && summary.total_jobs > 0
-                  ? `${Math.min(100, (summary.completed_jobs / summary.total_jobs) * 100).toFixed(1)}%`
-                  : "99.9%"}
-              </div>
-              <div className="text-xs text-slate-400 font-sans mt-0.5">
-                Dispatch Reliability
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Centerpiece Photorealistic 3D Earth Globe with Floating Tags */}
-        <div className="w-full lg:w-7/12 relative h-[520px] sm:h-[620px]">
+      {/* HERO SECTION — FULL 3D SPACE GLOBE ENVIRONMENT */}
+      <section className="relative -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-8 sm:py-12 overflow-hidden rounded-3xl min-h-[660px] sm:min-h-[720px] flex items-center">
+        {/* Full-width 3D WebGL Globe & Continuous Space Environment */}
+        <div className="absolute inset-0 z-0">
           <EarthGlobe
             regions={regions}
             carbonObservations={carbon}
@@ -199,6 +135,76 @@ export default function LandingPage() {
             onSelectRegion={(code) => setSelectedRegionCode(code)}
             height="100%"
           />
+        </div>
+
+        {/* Hero Content Left Column: Typography, CTAs, KPI Metrics */}
+        <div className="relative z-10 w-full max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-8 pointer-events-none">
+          <div className="w-full lg:w-5/12 space-y-7 pointer-events-auto">
+            <div className="space-y-3">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-[1.08] font-sans">
+                A cleaner <br />
+                cloud for a <br />
+                <span className="text-[#22c55e] drop-shadow-[0_0_35px_rgba(34,197,94,0.4)]">
+                  brighter tomorrow.
+                </span>
+              </h1>
+              <p className="text-base text-slate-300 font-sans leading-relaxed max-w-lg pt-2">
+                EcoRoute intelligently schedules workloads across global regions to minimize carbon emissions while meeting performance goals.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-4 pt-1">
+              <button
+                onClick={() => setShowDispatchModal(true)}
+                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#22c55e] hover:bg-[#16a34a] text-slate-950 font-bold text-sm shadow-[0_0_25px_rgba(34,197,94,0.35)] hover:shadow-[0_0_35px_rgba(34,197,94,0.5)] transition-all cursor-pointer font-sans"
+              >
+                Run a Workload <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <Link
+                href="/regions"
+                className="inline-flex items-center gap-1.5 px-4 py-3.5 rounded-xl text-slate-300 hover:text-white text-sm font-semibold transition group"
+              >
+                Explore the System <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </div>
+
+            {/* Hero KPI Stat Triad */}
+            <div className="grid grid-cols-3 gap-6 pt-6 border-t border-white/[0.08]">
+              <div>
+                <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
+                  {regions.length > 0 ? regions.length : 25}
+                </div>
+                <div className="text-xs text-slate-400 font-sans mt-0.5">
+                  Global Regions
+                </div>
+              </div>
+
+              <div>
+                <div className="text-3xl font-extrabold text-[#22c55e] font-mono tracking-tight">
+                  {displaySavings}
+                </div>
+                <div className="text-xs text-slate-400 font-sans mt-0.5">
+                  Lower Emissions
+                </div>
+              </div>
+
+              <div>
+                <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
+                  {summary?.completed_jobs && summary?.total_jobs && summary.total_jobs > 0
+                    ? `${Math.min(100, (summary.completed_jobs / summary.total_jobs) * 100).toFixed(1)}%`
+                    : "99.9%"}
+                </div>
+                <div className="text-xs text-slate-400 font-sans mt-0.5">
+                  Dispatch Reliability
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column Spacer */}
+          <div className="w-full lg:w-7/12 pointer-events-none hidden lg:block" />
         </div>
       </section>
 
