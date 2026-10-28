@@ -129,6 +129,59 @@ export function ReactGlobeEngine({
   const [autoRotate, setAutoRotate] = useState(true);
   const [webGlSupported, setWebGlSupported] = useState(true);
   const [, setHoveredRegion] = useState<GlobePoint | null>(null);
+  const [countryPaths, setCountryPaths] = useState<Array<{ coords: [number, number][]; color: string; stroke: number }>>([]);
+
+  // Load sovereign international country boundaries GeoJSON for crisp gold outline rendering
+  useEffect(() => {
+    let isMounted = true;
+    fetch("/ne_110m_admin_0_countries.geojson")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load country boundaries GeoJSON");
+        return res.json();
+      })
+      .then((geojson) => {
+        if (!isMounted || !geojson?.features) return;
+        const items: Array<{ coords: [number, number][]; color: string; stroke: number }> = [];
+
+        // Major sovereign global regions receive crisp #E6C36A, secondary boundaries receive #C9A45A
+        const majorSovereignCodes = new Set([
+          "US", "CA", "MX", "BR", "AR", "GB", "FR", "DE", "IT", "ES", "SE", "NO", "RU", "CN", "IN", "JP", "AU", "ZA", "EG", "SA", "AE", "IE", "SG"
+        ]);
+
+        for (const feature of geojson.features) {
+          const geom = feature.geometry;
+          if (!geom) continue;
+          const iso = feature.properties?.ISO_A2 || feature.properties?.ADM0_A3 || "";
+          if (iso === "AQ") continue; // Exclude Antarctica for visual balance
+
+          const isMajor = majorSovereignCodes.has(iso);
+          // Opacity 0.92 with refined gold (#E6C36A) for major sovereign nations; #C9A45A at 0.82 for others
+          const color = isMajor ? "rgba(230, 195, 106, 0.92)" : "rgba(201, 164, 90, 0.82)";
+          const stroke = isMajor ? 0.65 : 0.48;
+
+          if (geom.type === "Polygon") {
+            for (const ring of geom.coordinates) {
+              items.push({ coords: ring, color, stroke });
+            }
+          } else if (geom.type === "MultiPolygon") {
+            for (const poly of geom.coordinates) {
+              for (const ring of poly) {
+                items.push({ coords: ring, color, stroke });
+              }
+            }
+          }
+        }
+        setCountryPaths(items);
+      })
+      .catch((err) => {
+        console.debug("Country borders GeoJSON load fallback:", err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
 
   // Measure container dimensions for responsive canvas sizing
   useEffect(() => {
@@ -354,14 +407,15 @@ export function ReactGlobeEngine({
           startLng: Number(rA.longitude),
           endLat: Number(rB.latitude),
           endLng: Number(rB.longitude),
+          // High-contrast refined mint palette (#55F2B0 -> #A0F5D0) with radiant photon visibility
           color: arcIdx % 2 === 0
-            ? ["rgba(16, 185, 129, 0.95)", "rgba(245, 199, 93, 0.95)"]
-            : ["rgba(245, 199, 93, 0.95)", "rgba(16, 185, 129, 0.95)"],
-          altitude: 0.14 + (arcIdx % 5) * 0.035,
-          stroke: 0.38,
-          dashLength: 0.42,
-          dashGap: 0.26,
-          dashAnimateTime: 3200 + (arcIdx % 4) * 600,
+            ? ["#55F2B0", "#A0F5D0"]
+            : ["#A0F5D0", "#55F2B0"],
+          altitude: 0.16 + (arcIdx % 5) * 0.032,
+          stroke: 0.72,
+          dashLength: 0.45,
+          dashGap: 0.18,
+          dashAnimateTime: 2600 + (arcIdx % 4) * 450,
           isWinning: false,
         });
         arcIdx += 1;
@@ -382,12 +436,13 @@ export function ReactGlobeEngine({
           startLng: activeRoute.origin.lng,
           endLat: targetLat,
           endLng: targetLng,
-          color: ["#F5C75D", "#10B981"],
-          altitude: 0.22,
-          stroke: 0.55,
-          dashLength: 0.5,
-          dashGap: 0.2,
-          dashAnimateTime: 2200,
+          // Highlighted winning route: Radiant Amber/Gold (#FFD783) -> Vivid Mint (#55F2B0)
+          color: ["#FFD783", "#55F2B0"],
+          altitude: 0.25,
+          stroke: 1.05,
+          dashLength: 0.52,
+          dashGap: 0.14,
+          dashAnimateTime: 1800,
           isWinning: true,
         });
       }
@@ -402,12 +457,12 @@ export function ReactGlobeEngine({
           startLng: Number(cand.longitude),
           endLat: targetLat,
           endLng: targetLng,
-          color: ["rgba(245, 199, 93, 0.75)", "rgba(16, 185, 129, 0.85)"],
-          altitude: 0.18,
-          stroke: 0.32,
-          dashLength: 0.45,
-          dashGap: 0.25,
-          dashAnimateTime: 3000,
+          color: ["#FFD783", "#A0F5D0"],
+          altitude: 0.20,
+          stroke: 0.78,
+          dashLength: 0.48,
+          dashGap: 0.20,
+          dashAnimateTime: 2400,
           isWinning: true,
         });
       }
@@ -582,11 +637,11 @@ export function ReactGlobeEngine({
         cloudTextureLoader.load(
           "/textures/clouds.png",
           (texture) => {
-            const cloudsGeo = new THREE.SphereGeometry(100 * 1.006, 64, 64);
+            const cloudsGeo = new THREE.SphereGeometry(100 * 1.004, 64, 64);
             const cloudsMat = new THREE.MeshStandardMaterial({
               map: texture,
               transparent: true,
-              opacity: 0.35,
+              opacity: 0.18,
               blending: THREE.AdditiveBlending,
               depthWrite: false,
             });
@@ -771,6 +826,15 @@ export function ReactGlobeEngine({
           ringColor="color"
           ringAltitude={0.02}
           ringResolution={36}
+          // Sovereign Country Boundaries Layer: Refined Gold International Outlines (#E6C36A / #C9A45A)
+          pathsData={countryPaths}
+          pathPoints={(d: any) => d.coords}
+          pathPointLat={(p: any) => p[1]}
+          pathPointLng={(p: any) => p[0]}
+          pathPointAlt={0.005}
+          pathColor={(d: any) => d.color}
+          pathStroke={(d: any) => d.stroke}
+          pathResolution={3}
           // Routing Arcs Layer
           arcsData={arcsData}
           arcStartLat="startLat"
