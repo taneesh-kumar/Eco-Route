@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { CarbonObservationResponse, RegionResponse } from "@/lib/types";
 import { CarbonBadge } from "./CarbonBadge";
 import {
@@ -122,6 +122,24 @@ export function RegionGrid({
   const [timeRange, setTimeRange] = useState<"24H" | "7D" | "30D">("24H");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
+  // Handle Escape key and body scroll lock for region details modal
+  useEffect(() => {
+    if (!modalRegion) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setModalRegion(null);
+        setHoveredIndex(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [modalRegion]);
+
   const carbonMap: Record<string, CarbonObservationResponse> = useMemo(() => {
     const map: Record<string, CarbonObservationResponse> = {};
     for (const obs of carbonObservations) {
@@ -196,8 +214,22 @@ export function RegionGrid({
     <div className="space-y-6 font-sans">
       {/* Detailed Modal/Drawer for Region */}
       {modalRegion && chartData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/[0.1] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setModalRegion(null);
+              setHoveredIndex(null);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="region-modal-title"
+            className="glass-panel w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/[0.12] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8),0_0_30px_rgba(34,197,94,0.1)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+          >
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.08] bg-slate-950/90">
               <div className="flex items-center gap-3">
@@ -206,7 +238,9 @@ export function RegionGrid({
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-white">{modalRegion.name}</h3>
+                    <h3 id="region-modal-title" className="text-lg font-bold text-white font-sans">
+                      {modalRegion.name}
+                    </h3>
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
                       {modalRegion.code}
                     </span>
@@ -226,15 +260,16 @@ export function RegionGrid({
                   setModalRegion(null);
                   setHoveredIndex(null);
                 }}
-                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                aria-label={`Close ${modalRegion.name} telemetry modal`}
+                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer border border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Tabs & Filters */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-white/[0.06] bg-slate-950/60">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-white/[0.06] bg-slate-950/60">
+              <div className="flex items-center gap-2 overflow-x-auto max-w-full pb-1 sm:pb-0">
                 {[
                   { id: "carbon", label: "Carbon Telemetry" },
                   { id: "workloads", label: "Compute Workloads" },
@@ -246,7 +281,7 @@ export function RegionGrid({
                       setActiveTab(tab.id as any);
                       setHoveredIndex(null);
                     }}
-                    className={`text-xs px-3.5 py-1.5 rounded-xl font-mono uppercase font-bold transition cursor-pointer ${
+                    className={`text-xs px-3.5 py-1.5 rounded-xl font-mono uppercase font-bold transition cursor-pointer shrink-0 ${
                       activeTab === tab.id
                         ? "bg-[#22c55e] text-slate-950 shadow-md shadow-emerald-950/40"
                         : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
@@ -257,7 +292,7 @@ export function RegionGrid({
                 ))}
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-mono">
+              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-mono self-start sm:self-auto shrink-0">
                 {(["24H", "7D", "30D"] as const).map((r) => (
                   <button
                     key={r}
@@ -284,10 +319,10 @@ export function RegionGrid({
                     <Activity className="w-4 h-4 text-[#22c55e]" />
                     <span>
                       {activeTab === "carbon"
-                        ? `Carbon Intensity Trend (${chartData.unit})`
+                        ? `Carbon Intensity Trend (${chartData.unit}) • Illustrative Diurnal Projection`
                         : activeTab === "workloads"
-                        ? `Active Compute Allocation (${chartData.unit})`
-                        : `Power Consumption (${chartData.unit})`}
+                        ? `Active Compute Allocation (${chartData.unit}) • Operational Model`
+                        : `Power Consumption (${chartData.unit}) • Mathematical Model`}
                     </span>
                   </div>
                   <div className="text-xs font-mono flex items-center gap-3">

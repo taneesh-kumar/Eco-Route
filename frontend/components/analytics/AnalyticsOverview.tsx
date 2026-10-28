@@ -33,13 +33,7 @@ export function AnalyticsOverview({
   // Dynamic regional share derived from active regions and utilization
   const regionalShare = useMemo(() => {
     if (regions.length === 0) {
-      return [
-        { label: "Europe (Clean Grid)", pct: 36, color: "#22c55e", count: 8 },
-        { label: "North America", pct: 28, color: "#3b82f6", count: 6 },
-        { label: "Asia-Pacific", pct: 20, color: "#06b6d4", count: 6 },
-        { label: "India & South Asia", pct: 10, color: "#eab308", count: 2 },
-        { label: "Other Global Hubs", pct: 6, color: "#a855f7", count: 3 },
-      ];
+      return [];
     }
 
     const groups: Record<string, { totalUtil: number; count: number; color: string }> = {
@@ -190,10 +184,8 @@ export function AnalyticsOverview({
 
   // Format carbon savings percentage vs conventional baseline
   const savingsPct = summary?.carbon_savings_pct_vs_baseline;
-  const savingsFormatted =
-    savingsPct != null && Number(savingsPct) > 0
-      ? `${Number(savingsPct).toFixed(1)}%`
-      : "32.0%";
+  const hasSavings = savingsPct != null && Number(savingsPct) > 0;
+  const savingsFormatted = hasSavings ? `${Number(savingsPct).toFixed(1)}%` : null;
 
   return (
     <div className="space-y-6 font-sans">
@@ -207,10 +199,16 @@ export function AnalyticsOverview({
           <div className="text-3xl sm:text-4xl font-extrabold font-mono text-white mt-2">
             {co2Formatted}
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-mono text-[#22c55e] font-bold mt-2">
-            <TrendingDown className="w-4 h-4" />
-            <span>&darr; {savingsFormatted} emissions vs. baseline</span>
-          </div>
+          {savingsFormatted ? (
+            <div className="flex items-center gap-1.5 text-xs font-mono text-[#22c55e] font-bold mt-2">
+              <TrendingDown className="w-4 h-4" />
+              <span>&darr; {savingsFormatted} emissions vs. baseline</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 mt-2">
+              <span>No counterfactual baseline recorded</span>
+            </div>
+          )}
         </div>
 
         {/* Card 2: Clean Energy Used */}
@@ -250,7 +248,7 @@ export function AnalyticsOverview({
             <div>
               <h3 className="text-base font-bold text-white">Carbon Intensity Trend</h3>
               <span className="text-xs font-mono text-slate-400">
-                Global Network Average [gCO₂/kWh] &bull; {timeframe} View
+                Global Network Average [gCO₂/kWh] &bull; {timeframe} View &bull; Illustrative Diurnal Model
               </span>
             </div>
             <div className="text-xs font-mono text-slate-300">
@@ -356,6 +354,11 @@ export function AnalyticsOverview({
             </span>
           </div>
 
+          {donutSlices.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 font-mono text-xs">
+              No regional nodes loaded to compute distribution.
+            </div>
+          ) : (
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 py-2">
             {/* SVG Donut */}
             <div className="relative w-40 h-40 shrink-0">
@@ -412,6 +415,7 @@ export function AnalyticsOverview({
               ))}
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>
