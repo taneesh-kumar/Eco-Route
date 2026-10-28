@@ -4,16 +4,7 @@ import { useState } from "react";
 import { JobCreatePayload, WorkloadType } from "@/lib/types";
 import { PipelineVisualizer } from "./PipelineVisualizer";
 import {
-  Cpu,
-  Clock,
-  Layers,
-  Sliders,
-  Send,
   Check,
-  ShieldCheck,
-  Zap,
-  Activity,
-  Server,
   ArrowRight,
 } from "lucide-react";
 
@@ -92,11 +83,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
   const [priority, setPriority] = useState(5);
   const [priorityClass, setPriorityClass] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [deadlineOffset, setDeadlineOffset] = useState(1800);
-  const [maxRetries, setMaxRetries] = useState(3);
-
-  // Policy dropdown state
-  const [carbonPolicy, setCarbonPolicy] = useState("Balanced (Default)");
-  const [performanceConstraint, setPerformanceConstraint] = useState("Standard (Default)");
+  const [maxRetries] = useState(3);
 
   // Multi-objective weights
   const [carbonWeight, setCarbonWeight] = useState(0.5);
@@ -175,21 +162,21 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
       {/* Left Column: Submit Workload Form (7 cols) */}
       <form
         onSubmit={handleSubmit}
-        className="lg:col-span-7 glass-panel p-6 sm:p-7 rounded-3xl border border-white/[0.09] shadow-2xl space-y-5"
+        className="lg:col-span-7 ecoroute-card p-6 sm:p-7 shadow-xs space-y-5"
       >
-        <div className="pb-3 border-b border-white/[0.06]">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] bg-[#22c55e]/10 px-2.5 py-0.5 rounded-md border border-[#22c55e]/30 font-semibold inline-block mb-1.5">
+        <div className="pb-3 border-b border-[#DCCFB5]">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-[#075442] bg-[#075442]/10 px-2.5 py-0.5 rounded-full border border-[#075442]/20 font-semibold inline-block mb-1.5">
             Compute Demand Intake
           </div>
-          <h2 className="text-xl font-bold text-white">Submit a New Workload</h2>
-          <p className="text-xs text-slate-300 mt-0.5">
-            Define your compute requirements and let EcoRoute find the optimal region.
+          <h2 className="text-xl font-bold text-[#075442]">Submit a New Workload</h2>
+          <p className="text-xs text-[#63786C] mt-0.5">
+            Define your compute requirements and let EcoRoute find the optimal low-carbon region.
           </p>
         </div>
 
         {/* Workload Identifier */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5 font-mono">
+          <label className="block text-xs font-semibold text-[#183B32] mb-1.5 font-mono">
             Workload Identifier
           </label>
           <input
@@ -198,13 +185,13 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
             value={workloadName}
             onChange={(e) => setWorkloadName(e.target.value)}
             placeholder="e.g. vision-training-02"
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:border-[#22c55e] transition-colors"
+            className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5] text-[#183B32] text-xs font-mono focus:outline-none focus:border-[#075442] transition-colors"
           />
         </div>
 
         {/* Workload Type Selector Pills */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5 font-mono">
+          <label className="block text-xs font-semibold text-[#183B32] mb-1.5 font-mono">
             Workload Type
           </label>
           <div className="grid grid-cols-3 gap-2">
@@ -220,13 +207,13 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
                   }}
                   className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition flex items-center justify-center gap-2 cursor-pointer border ${
                     isSelected
-                      ? "bg-emerald-500/20 text-[#22c55e] border-[#22c55e]"
-                      : "bg-slate-950/60 text-slate-400 border-slate-800 hover:text-slate-200"
+                      ? "bg-[#075442] text-[#FFF8EB] border-[#075442] shadow-xs"
+                      : "bg-[#FFFDF8] text-[#486256] border-[#DCCFB5] hover:border-[#075442]"
                   }`}
                 >
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      isSelected ? "bg-[#22c55e]" : "bg-slate-700"
+                      isSelected ? "bg-[#FFF8EB]" : "bg-[#A5BDAA]"
                     }`}
                   />
                   {t.charAt(0) + t.slice(1).toLowerCase()}
@@ -236,99 +223,66 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
           </div>
         </div>
 
-        {/* Priority & Policy Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 font-mono">
-              Priority
-            </label>
-            <select
-              value={priority <= 3 ? "High" : priority <= 7 ? "Medium" : "Low"}
-              onChange={(e) => handlePriorityChange(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:border-[#22c55e] transition-colors"
-            >
-              <option value="High">High (Urgent SLA)</option>
-              <option value="Medium">Medium (Balanced)</option>
-              <option value="Low">Low (Delay Tolerant)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 font-mono">
-              Carbon Policy
-            </label>
-            <select
-              value={carbonPolicy}
-              onChange={(e) => setCarbonPolicy(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:border-[#22c55e] transition-colors"
-            >
-              <option value="Balanced (Default)">Balanced (Default)</option>
-              <option value="Aggressive (Max Carbon)">Aggressive (Max Carbon)</option>
-              <option value="Strict SLA First">Strict SLA First</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Performance Constraints Dropdown */}
+        {/* Priority Selector */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5 font-mono">
-            Performance Constraints
+          <label className="block text-xs font-semibold text-[#183B32] mb-1.5 font-mono">
+            Priority Tier &amp; SLA Flexibility
           </label>
           <select
-            value={performanceConstraint}
-            onChange={(e) => setPerformanceConstraint(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:border-[#22c55e] transition-colors"
+            value={priority <= 3 ? "High" : priority <= 7 ? "Medium" : "Low"}
+            onChange={(e) => handlePriorityChange(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5] text-[#183B32] text-xs font-mono focus:outline-none focus:border-[#075442] transition-colors"
           >
-            <option value="Standard (Default)">Standard (Default)</option>
-            <option value="Ultra-Low Latency (<100ms)">Ultra-Low Latency (&lt;100ms)</option>
-            <option value="High Throughput Batch">High Throughput Batch</option>
+            <option value="High">High (Strict Real-Time SLA)</option>
+            <option value="Medium">Medium (Balanced Schedule)</option>
+            <option value="Low">Low (Delay Tolerant / Carbon Preferred)</option>
           </select>
         </div>
 
         {/* Hardware Capacity Specs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/[0.06] text-xs font-mono">
-          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 block">vCPU Cores</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-[#DCCFB5] text-xs font-mono">
+          <div className="p-2.5 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5]">
+            <span className="text-[10px] text-[#63786C] block font-semibold">vCPU Cores</span>
             <input
               type="number"
               min="1"
               max="128"
               value={cpuCores}
               onChange={(e) => setCpuCores(parseInt(e.target.value) || 1)}
-              className="w-full bg-transparent font-bold text-white mt-0.5 focus:outline-none"
+              className="w-full bg-transparent font-bold text-[#183B32] mt-0.5 focus:outline-none"
             />
           </div>
-          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 block">RAM (GB)</span>
+          <div className="p-2.5 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5]">
+            <span className="text-[10px] text-[#63786C] block font-semibold">RAM (GB)</span>
             <input
               type="number"
               min="1"
               max="512"
               value={memoryGb}
               onChange={(e) => setMemoryGb(parseInt(e.target.value) || 1)}
-              className="w-full bg-transparent font-bold text-white mt-0.5 focus:outline-none"
+              className="w-full bg-transparent font-bold text-[#183B32] mt-0.5 focus:outline-none"
             />
           </div>
-          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 block">Est. Duration</span>
+          <div className="p-2.5 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5]">
+            <span className="text-[10px] text-[#63786C] block font-semibold">Est. Duration</span>
             <input
               type="number"
               min="5"
               max="86400"
               value={duration}
               onChange={(e) => setDuration(parseInt(e.target.value) || 5)}
-              className="w-full bg-transparent font-bold text-white mt-0.5 focus:outline-none"
+              className="w-full bg-transparent font-bold text-[#183B32] mt-0.5 focus:outline-none"
             />
           </div>
-          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 block">Slack (Sec)</span>
+          <div className="p-2.5 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5]">
+            <span className="text-[10px] text-[#63786C] block font-semibold">Slack (Sec)</span>
             <input
               type="number"
               min="10"
               max="604800"
               value={deadlineOffset}
               onChange={(e) => setDeadlineOffset(parseInt(e.target.value) || 60)}
-              className="w-full bg-transparent font-bold text-white mt-0.5 focus:outline-none"
+              className="w-full bg-transparent font-bold text-[#183B32] mt-0.5 focus:outline-none"
             />
           </div>
         </div>
@@ -337,12 +291,12 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
         <button
           type="submit"
           disabled={loading || isSubmitting}
-          className="w-full py-3 bg-[#22c55e] hover:bg-[#16a34a] disabled:bg-slate-800 text-slate-950 disabled:text-slate-500 font-bold text-xs font-sans rounded-xl transition-all shadow-lg shadow-emerald-950/50 cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-3 bg-[#075442] hover:bg-[#063B30] disabled:bg-[#A5BDAA] text-[#FFF8EB] disabled:text-[#F4E4C4] font-bold text-sm font-sans rounded-xl transition-all shadow-md shadow-[#075442]/20 cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {submitted ? (
             <>
-              <Check className="w-4 h-4 text-slate-950 stroke-[3]" />
-              Workload Enqueued!
+              <Check className="w-4 h-4 text-[#FFF8EB] stroke-[3]" />
+              Workload Enqueued Successfully!
             </>
           ) : (
             <>
@@ -352,7 +306,7 @@ export function WorkloadForm({ onSubmit, loading = false }: WorkloadFormProps) {
         </button>
       </form>
 
-      {/* Right Column: Dynamic Workload-Linked Pipeline Execution Visualizer */}
+      {/* Right Column: Dynamic Pipeline Execution Visualizer */}
       <div className="lg:col-span-5 flex flex-col">
         <PipelineVisualizer
           isSubmitting={isSubmitting}

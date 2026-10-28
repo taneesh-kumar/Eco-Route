@@ -8,18 +8,8 @@ import {
   Server,
   Zap,
   Activity,
-  Cpu,
-  MapPin,
-  Clock,
-  Radio,
-  CheckCircle2,
-  TrendingDown,
   X,
-  Layers,
-  BarChart3,
   ShieldCheck,
-  TrendingUp,
-  Info,
 } from "lucide-react";
 
 interface RegionGridProps {
@@ -37,7 +27,6 @@ function generateRegionTimeSeries(
   metric: "carbon" | "workloads" | "infrastructure",
   timeRange: "24H" | "7D" | "30D"
 ): { labels: string[]; values: number[]; unit: string; avg: number; min: number; max: number } {
-  // Deterministic seed from region code characters
   let seed = 0;
   for (let i = 0; i < region.code.length; i++) {
     seed = (seed << 5) - seed + region.code.charCodeAt(i);
@@ -59,7 +48,6 @@ function generateRegionTimeSeries(
   const peakPower = Number(region.peak_power_watts) || 500;
 
   for (let i = 0; i < numPoints; i++) {
-    // Generate timestamps
     if (timeRange === "24H") {
       const hour = i.toString().padStart(2, "0");
       labels.push(`${hour}:00`);
@@ -70,20 +58,17 @@ function generateRegionTimeSeries(
       labels.push(`Day ${i + 1}`);
     }
 
-    // Mathematical curve variation based on diurnal cycle & region characteristics
     const progress = i / numPoints;
-    const diurnalFactor = Math.sin(progress * Math.PI * 2 - Math.PI / 2); // Lowest at night/early morning, peaks in afternoon/evening
+    const diurnalFactor = Math.sin(progress * Math.PI * 2 - Math.PI / 2);
     const noise = Math.sin((i + seed) * 1.7) * 0.12;
 
     if (metric === "carbon") {
-      // Solar-heavy diurnal variation: dips during peak daylight, rises during evening demand peak
       const val = Math.max(
         15,
         baseIntensity + diurnalFactor * (baseIntensity * 0.28) + noise * baseIntensity
       );
       values.push(Math.round(val));
     } else if (metric === "workloads") {
-      // Workload variation: peaks during business hours (09:00 - 18:00)
       const utilVar = Math.max(
         0.05,
         Math.min(0.95, baseUtil + diurnalFactor * 0.22 + noise * 0.08)
@@ -91,21 +76,27 @@ function generateRegionTimeSeries(
       const activeCores = Math.round(utilVar * maxCpu);
       values.push(activeCores);
     } else {
-      // Infrastructure power curve in kW: idle + (peak - idle) * util
       const utilVar = Math.max(
         0.05,
         Math.min(0.95, baseUtil + diurnalFactor * 0.18 + noise * 0.05)
       );
       const wattsPerNode = idlePower + (peakPower - idlePower) * utilVar;
       const totalKw = (wattsPerNode * (maxCpu / 4)) / 1000;
-      values.push(Math.round(totalKw * 10) / 10);
+      values.push(Math.round(totalKw));
     }
   }
 
+  const sum = values.reduce((a, b) => a + b, 0);
+  const avg = Math.round(sum / values.length);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const avg = Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
-  const unit = metric === "carbon" ? "gCO₂/kWh" : metric === "workloads" ? "vCPUs" : "kW";
+
+  const unit =
+    metric === "carbon"
+      ? "gCO₂/kWh"
+      : metric === "workloads"
+      ? "vCPUs"
+      : "kW";
 
   return { labels, values, unit, avg, min, max };
 }
@@ -122,7 +113,7 @@ export function RegionGrid({
   const [timeRange, setTimeRange] = useState<"24H" | "7D" | "30D">("24H");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const carbonMap: Record<string, CarbonObservationResponse> = useMemo(() => {
+  const carbonMap = useMemo(() => {
     const map: Record<string, CarbonObservationResponse> = {};
     for (const obs of carbonObservations) {
       map[obs.region_code] = obs;
@@ -130,93 +121,81 @@ export function RegionGrid({
     return map;
   }, [carbonObservations]);
 
-  // Generate dynamic chart data for currently open modal region
   const chartData = useMemo(() => {
     if (!modalRegion) return null;
-    const obs = carbonMap[modalRegion.code];
-    return generateRegionTimeSeries(modalRegion, obs, activeTab, timeRange);
-  }, [modalRegion, carbonMap, activeTab, timeRange]);
+    return generateRegionTimeSeries(
+      modalRegion,
+      carbonMap[modalRegion.code],
+      activeTab,
+      timeRange
+    );
+  }, [modalRegion, activeTab, timeRange, carbonMap]);
+
+  const { areaPath, linePath, points } = useMemo(() => {
+    if (!chartData || chartData.values.length === 0) {
+      return { areaPath: "", linePath: "", points: [] };
+    }
+
+    const w = 500;
+    const h = 120;
+    const pad = 10;
+    const minVal = chartData.min;
+    const maxVal = Math.max(chartData.max, minVal + 1);
+    const pts: { x: number; y: number }[] = [];
+
+    const n = chartData.values.length;
+    for (let i = 0; i < n; i++) {
+      const x = pad + (i / (n - 1)) * (w - 2 * pad);
+      const norm = (chartData.values[i] - minVal) / (maxVal - minVal);
+      const y = h - pad - norm * (h - 2 * pad);
+      pts.push({ x, y });
+    }
+
+    let line = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      line += ` L ${pts[i].x},${pts[i].y}`;
+    }
+
+    const area = `${line} L ${pts[pts.length - 1].x},${h} L ${pts[0].x},${h} Z`;
+
+    return { areaPath: area, linePath: line, points: pts };
+  }, [chartData]);
 
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-          <div key={i} className="h-60 rounded-2xl bg-slate-900/60 border border-slate-800 animate-pulse" />
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="h-64 rounded-2xl ecoroute-card animate-pulse" />
         ))}
       </div>
     );
   }
 
-  if (regions.length === 0) {
-    return (
-      <div className="glass-panel p-12 text-center rounded-2xl border border-white/[0.08]">
-        <Globe className="w-10 h-10 text-slate-500 mx-auto mb-3" />
-        <h3 className="text-base font-semibold text-slate-300 font-sans">No Target Regions Loaded</h3>
-        <p className="text-xs text-slate-400 mt-1 font-sans">
-          Seed the database topology to begin multi-region carbon-aware dispatch.
-        </p>
-      </div>
-    );
-  }
-
-  // Generate SVG path from data points
-  const renderSvgPath = () => {
-    if (!chartData || chartData.values.length === 0) return { areaPath: "", linePath: "" };
-    const values = chartData.values;
-    const min = chartData.min;
-    const max = chartData.max;
-    const range = max - min || 1;
-
-    const width = 500;
-    const height = 110;
-    const padding = 15;
-
-    const points = values.map((val, idx) => {
-      const x = (idx / (values.length - 1)) * (width - padding * 2) + padding;
-      const y = height - padding - ((val - min) / range) * (height - padding * 2);
-      return { x, y };
-    });
-
-    let linePath = `M ${points[0].x},${points[0].y}`;
-    for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1];
-      const curr = points[i];
-      const cx = (prev.x + curr.x) / 2;
-      linePath += ` Q ${prev.x},${prev.y} ${cx},${(prev.y + curr.y) / 2} T ${curr.x},${curr.y}`;
-    }
-
-    const areaPath = `${linePath} L ${points[points.length - 1].x},${height} L ${points[0].x},${height} Z`;
-
-    return { areaPath, linePath, points };
-  };
-
-  const { areaPath, linePath, points } = renderSvgPath();
-
   return (
     <div className="space-y-6 font-sans">
       {/* Detailed Modal/Drawer for Region */}
       {modalRegion && chartData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/[0.1] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#063B30]/60 backdrop-blur-sm">
+          <div className="ecoroute-card-elevated w-full max-w-4xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.08] bg-slate-950/90">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[#DCCFB5] bg-[#FFF8EB]">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[#22c55e]">
+                <div className="w-10 h-10 rounded-xl bg-[#075442]/10 border border-[#075442]/20 flex items-center justify-center text-[#075442]">
                   <Globe className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-white">{modalRegion.name}</h3>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                    <h3 className="text-lg font-bold text-[#075442]">{modalRegion.name}</h3>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[#FFFDF8] border border-[#DCCFB5] text-[#183B32]">
                       {modalRegion.code}
                     </span>
-                    <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse" />
+                    <span className="text-xs font-mono text-[#075442] flex items-center gap-1 font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-[#075442] animate-pulse" />
                       Operational
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    {modalRegion.country} &bull; {Number(modalRegion.latitude).toFixed(2)}°, {Number(modalRegion.longitude).toFixed(2)}° &bull; Provider: <span className="text-cyan-400 font-semibold">{modalRegion.provider}</span>
+                  <p className="text-xs text-[#63786C] font-mono mt-0.5">
+                    {modalRegion.country} &bull; {Number(modalRegion.latitude).toFixed(2)}°, {Number(modalRegion.longitude).toFixed(2)}° &bull; Provider: <span className="text-[#075442] font-semibold">{modalRegion.provider}</span>
                   </p>
                 </div>
               </div>
@@ -226,14 +205,14 @@ export function RegionGrid({
                   setModalRegion(null);
                   setHoveredIndex(null);
                 }}
-                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-[#FFFDF8] hover:bg-[#F4E4C4] text-[#63786C] hover:text-[#183B32] border border-[#DCCFB5] flex items-center justify-center transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Tabs & Filters */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-white/[0.06] bg-slate-950/60">
+            <div className="flex items-center justify-between px-6 py-3 border-b border-[#DCCFB5] bg-[#FFF8EB]">
               <div className="flex items-center gap-2">
                 {[
                   { id: "carbon", label: "Carbon Telemetry" },
@@ -246,10 +225,10 @@ export function RegionGrid({
                       setActiveTab(tab.id as any);
                       setHoveredIndex(null);
                     }}
-                    className={`text-xs px-3.5 py-1.5 rounded-xl font-mono uppercase font-bold transition cursor-pointer ${
+                    className={`text-xs px-3.5 py-1.5 rounded-full font-mono uppercase font-bold transition cursor-pointer ${
                       activeTab === tab.id
-                        ? "bg-[#22c55e] text-slate-950 shadow-md shadow-emerald-950/40"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
+                        ? "bg-[#075442] text-[#FFF8EB] shadow-xs"
+                        : "text-[#63786C] hover:text-[#075442] hover:bg-[#F4E4C4]"
                     }`}
                   >
                     {tab.label}
@@ -257,7 +236,7 @@ export function RegionGrid({
                 ))}
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-mono">
+              <div className="flex items-center gap-1 bg-[#FFFDF8] p-1 rounded-xl border border-[#DCCFB5] text-xs font-mono">
                 {(["24H", "7D", "30D"] as const).map((r) => (
                   <button
                     key={r}
@@ -266,7 +245,7 @@ export function RegionGrid({
                       setHoveredIndex(null);
                     }}
                     className={`px-2.5 py-0.5 rounded-lg transition cursor-pointer ${
-                      timeRange === r ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
+                      timeRange === r ? "bg-[#075442] text-[#FFF8EB] font-bold" : "text-[#63786C] hover:text-[#183B32]"
                     }`}
                   >
                     {r}
@@ -276,12 +255,12 @@ export function RegionGrid({
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6">
+            <div className="p-6 overflow-y-auto space-y-6 bg-[#FFFDF8]">
               {/* Dynamic Region-Specific SVG Trend Chart */}
-              <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+              <div className="p-5 rounded-2xl bg-[#FFF8EB] border border-[#DCCFB5] space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-mono text-slate-300 uppercase tracking-wider font-semibold flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-[#22c55e]" />
+                  <div className="text-xs font-mono text-[#075442] uppercase tracking-wider font-bold flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-[#075442]" />
                     <span>
                       {activeTab === "carbon"
                         ? `Carbon Intensity Trend (${chartData.unit})`
@@ -291,10 +270,10 @@ export function RegionGrid({
                     </span>
                   </div>
                   <div className="text-xs font-mono flex items-center gap-3">
-                    <span className="text-slate-400">
-                      Avg: <strong className="text-slate-200">{chartData.avg} {chartData.unit}</strong>
+                    <span className="text-[#63786C]">
+                      Avg: <strong className="text-[#183B32]">{chartData.avg} {chartData.unit}</strong>
                     </span>
-                    <span className="text-[#22c55e] font-bold">
+                    <span className="text-[#075442] font-bold">
                       Current: {hoveredIndex !== null ? chartData.values[hoveredIndex] : chartData.values[chartData.values.length - 1]} {chartData.unit}
                     </span>
                   </div>
@@ -312,12 +291,12 @@ export function RegionGrid({
                       <linearGradient id="modalGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop
                           offset="0%"
-                          stopColor={activeTab === "carbon" ? (chartData.avg > 150 ? "#eab308" : "#22c55e") : "#0ea5e9"}
-                          stopOpacity="0.35"
+                          stopColor={activeTab === "carbon" ? (chartData.avg > 150 ? "#C99B43" : "#075442") : "#075442"}
+                          stopOpacity="0.25"
                         />
                         <stop
                           offset="100%"
-                          stopColor={activeTab === "carbon" ? (chartData.avg > 150 ? "#eab308" : "#22c55e") : "#0ea5e9"}
+                          stopColor={activeTab === "carbon" ? (chartData.avg > 150 ? "#C99B43" : "#075442") : "#075442"}
                           stopOpacity="0.0"
                         />
                       </linearGradient>
@@ -330,7 +309,7 @@ export function RegionGrid({
                     <path
                       d={linePath}
                       fill="none"
-                      stroke={activeTab === "carbon" ? (chartData.avg > 150 ? "#eab308" : "#22c55e") : "#0ea5e9"}
+                      stroke={activeTab === "carbon" ? (chartData.avg > 150 ? "#C99B43" : "#075442") : "#075442"}
                       strokeWidth="2.5"
                     />
 
@@ -342,105 +321,58 @@ export function RegionGrid({
                             cx={pt.x}
                             cy={pt.y}
                             r={hoveredIndex === idx ? 5 : idx === points.length - 1 ? 4 : 2}
-                            fill={hoveredIndex === idx ? "#ffffff" : activeTab === "carbon" ? "#22c55e" : "#0ea5e9"}
-                            stroke={activeTab === "carbon" ? "#22c55e" : "#0ea5e9"}
-                            strokeWidth="1.5"
-                            className="transition-all"
+                            fill={hoveredIndex === idx ? "#075442" : activeTab === "carbon" ? "#075442" : "#063B30"}
                           />
                         </g>
                       ))}
                   </svg>
-
-                  {/* Hover Tooltip Overlay */}
-                  {hoveredIndex !== null && points && points[hoveredIndex] && (
-                    <div
-                      style={{
-                        left: `${(points[hoveredIndex].x / 500) * 100}%`,
-                        top: `${(points[hoveredIndex].y / 120) * 100}%`,
-                        transform: "translate(-50%, -130%)",
-                      }}
-                      className="absolute pointer-events-none px-2.5 py-1 rounded-lg bg-slate-900/95 border border-white/20 text-white font-mono text-[11px] shadow-xl z-20 whitespace-nowrap"
-                    >
-                      <span className="text-slate-400">{chartData.labels[hoveredIndex]}:</span>{" "}
-                      <strong className="text-[#22c55e]">
-                        {chartData.values[hoveredIndex]} {chartData.unit}
-                      </strong>
-                    </div>
-                  )}
-
-                  {/* Axis Time Labels */}
-                  <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-2">
-                    {timeRange === "24H" ? (
-                      <>
-                        <span>00:00</span>
-                        <span>06:00</span>
-                        <span>12:00</span>
-                        <span>18:00</span>
-                        <span>24:00</span>
-                      </>
-                    ) : timeRange === "7D" ? (
-                      <>
-                        <span>Mon</span>
-                        <span>Wed</span>
-                        <span>Fri</span>
-                        <span>Sun</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Day 1</span>
-                        <span>Day 10</span>
-                        <span>Day 20</span>
-                        <span>Day 30</span>
-                      </>
-                    )}
-                  </div>
                 </div>
               </div>
 
-              {/* Regional Performance Metrics Grid — Mathematically Derived from Region Specs */}
+              {/* Regional Performance Metrics Grid */}
               <div>
-                <div className="text-xs font-mono text-slate-400 uppercase tracking-wider font-semibold mb-3">
+                <div className="text-xs font-mono text-[#63786C] uppercase tracking-wider font-semibold mb-3">
                   Regional Specifications &amp; Live Telemetry
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
-                  <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Peak Power Draw</span>
-                    <span className="text-lg font-bold text-white mt-1 block">
+                  <div className="p-4 rounded-xl bg-[#FFF8EB] border border-[#DCCFB5]">
+                    <span className="text-[10px] text-[#63786C] block">Peak Power Draw</span>
+                    <span className="text-lg font-bold text-[#183B32] mt-1 block">
                       {Number(modalRegion.peak_power_watts)} W / node
                     </span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    <span className="text-[10px] text-[#63786C] mt-0.5 block">
                       Idle: {Number(modalRegion.idle_power_watts)}W
                     </span>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Verified Carbon</span>
-                    <span className={`text-lg font-bold mt-1 block ${chartData.avg > 150 ? "text-amber-400" : "text-[#22c55e]"}`}>
+                  <div className="p-4 rounded-xl bg-[#FFF8EB] border border-[#DCCFB5]">
+                    <span className="text-[10px] text-[#63786C] block">Verified Carbon</span>
+                    <span className={`text-lg font-bold mt-1 block ${chartData.avg > 150 ? "text-[#8C6212]" : "text-[#075442]"}`}>
                       {carbonMap[modalRegion.code]?.carbon_intensity_gco2 != null
                         ? `${Number(carbonMap[modalRegion.code].carbon_intensity_gco2).toFixed(0)} gCO₂/kWh`
                         : "Unverified"}
                     </span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    <span className="text-[10px] text-[#63786C] mt-0.5 block">
                       Min: {chartData.min} | Max: {chartData.max}
                     </span>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Hardware Capacity</span>
-                    <span className="text-lg font-bold text-cyan-400 mt-1 block">
+                  <div className="p-4 rounded-xl bg-[#FFF8EB] border border-[#DCCFB5]">
+                    <span className="text-[10px] text-[#63786C] block">Hardware Capacity</span>
+                    <span className="text-lg font-bold text-[#075442] mt-1 block">
                       {Number(modalRegion.max_cpu_capacity)} vCPU
                     </span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    <span className="text-[10px] text-[#63786C] mt-0.5 block">
                       RAM: {Number(modalRegion.max_memory_capacity)} GB
                     </span>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Network Latency</span>
-                    <span className="text-lg font-bold text-emerald-300 mt-1 block">
+                  <div className="p-4 rounded-xl bg-[#FFF8EB] border border-[#DCCFB5]">
+                    <span className="text-[10px] text-[#63786C] block">Network Latency</span>
+                    <span className="text-lg font-bold text-[#183B32] mt-1 block">
                       {Number(modalRegion.network_latency_ms).toFixed(1)} ms
                     </span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    <span className="text-[10px] text-[#63786C] mt-0.5 block">
                       P99 SLA Compliant
                     </span>
                   </div>
@@ -451,13 +383,12 @@ export function RegionGrid({
         </div>
       )}
 
-      {/* Grid Cards (Clean, layered, clickable) */}
+      {/* Grid Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {regions.map((region) => {
           const obs = carbonMap[region.code];
           const utilPct = Math.round(Number(region.current_utilization) * 100);
           const isSelected = selectedRegionCode === region.code;
-          const ci = obs?.carbon_intensity_gco2 != null ? Number(obs.carbon_intensity_gco2) : null;
 
           return (
             <div
@@ -466,10 +397,10 @@ export function RegionGrid({
                 onSelectRegion?.(region.code);
                 setModalRegion(region);
               }}
-              className={`glass-panel-interactive rounded-2xl p-5 flex flex-col justify-between cursor-pointer group transition-all ${
+              className={`ecoroute-card p-5 flex flex-col justify-between cursor-pointer group transition-all ${
                 isSelected
-                  ? "border-[#22c55e] shadow-lg shadow-emerald-950/40 bg-emerald-950/10"
-                  : "hover:border-slate-700"
+                  ? "border-[#075442] bg-[#FFFDF8] shadow-sm"
+                  : "hover:border-[#075442]"
               }`}
             >
               <div>
@@ -477,19 +408,19 @@ export function RegionGrid({
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-100 text-base font-sans group-hover:text-emerald-300 transition-colors">
+                      <span className="font-bold text-[#183B32] text-base font-sans group-hover:text-[#075442] transition-colors">
                         {region.name}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-slate-900 text-slate-300 border border-slate-800 font-bold">
+                      <span className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-[#FFFDF8] text-[#486256] border border-[#DCCFB5] font-semibold">
                         {region.provider}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono mt-1">
-                      <span className="text-emerald-400 font-semibold">{region.code}</span>
+                    <div className="flex items-center gap-1.5 text-xs text-[#63786C] font-mono mt-1">
+                      <span className="text-[#075442] font-bold">{region.code}</span>
                       <span>&bull;</span>
                       <span>{region.country}</span>
                       <span>&bull;</span>
-                      <span className="text-[11px] text-slate-500">
+                      <span className="text-[11px] text-[#63786C]">
                         {Number(region.latitude).toFixed(1)}°, {Number(region.longitude).toFixed(1)}°
                       </span>
                     </div>
@@ -497,7 +428,7 @@ export function RegionGrid({
                   <div
                     className={`w-2.5 h-2.5 rounded-full ${
                       region.is_available && region.is_active
-                        ? "bg-[#22c55e] shadow-[0_0_10px_rgba(34,197,94,0.8)] animate-pulse"
+                        ? "bg-[#075442]"
                         : "bg-rose-500"
                     }`}
                     title={region.is_available ? "Active & Online" : "Offline"}
@@ -517,29 +448,29 @@ export function RegionGrid({
                 {/* Utilization Bar */}
                 <div className="space-y-1.5 mb-4">
                   <div className="flex justify-between text-xs font-mono">
-                    <span className="text-slate-400 flex items-center gap-1">
-                      <Activity className="w-3.5 h-3.5 text-emerald-400" /> Hardware Load
+                    <span className="text-[#63786C] flex items-center gap-1">
+                      <Activity className="w-3.5 h-3.5 text-[#075442]" /> Hardware Load
                     </span>
                     <span
                       className={`font-bold ${
                         utilPct > 80
-                          ? "text-rose-400"
+                          ? "text-rose-700"
                           : utilPct > 60
-                          ? "text-amber-400"
-                          : "text-emerald-400"
+                          ? "text-[#8C6212]"
+                          : "text-[#075442]"
                       }`}
                     >
                       {utilPct}%
                     </span>
                   </div>
-                  <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+                  <div className="w-full bg-[#EADBCE] h-2 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${
+                      className={`h-full rounded-full transition-all duration-300 ${
                         utilPct > 80
-                          ? "bg-rose-500"
+                          ? "bg-rose-600"
                           : utilPct > 60
-                          ? "bg-amber-500"
-                          : "bg-emerald-500"
+                          ? "bg-[#C99B43]"
+                          : "bg-[#075442]"
                       }`}
                       style={{ width: `${utilPct}%` }}
                     />
@@ -547,21 +478,21 @@ export function RegionGrid({
                 </div>
 
                 {/* Hardware Specs */}
-                <div className="grid grid-cols-2 gap-2 text-xs pt-3 border-t border-white/[0.06]">
-                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
-                      <Server className="w-3 h-3 text-slate-400" /> Capacity
+                <div className="grid grid-cols-2 gap-2 text-xs pt-3 border-t border-[#DCCFB5]">
+                  <div className="bg-[#FFFDF8] p-2.5 rounded-xl border border-[#DCCFB5]">
+                    <div className="text-[11px] text-[#63786C] flex items-center gap-1 font-mono">
+                      <Server className="w-3 h-3 text-[#075442]" /> Capacity
                     </div>
-                    <div className="font-mono text-slate-200 mt-1 font-semibold">
+                    <div className="font-mono text-[#183B32] mt-1 font-semibold">
                       {Number(region.max_cpu_capacity)} vCPU / {Number(region.max_memory_capacity)} GB
                     </div>
                   </div>
 
-                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
-                      <Zap className="w-3 h-3 text-amber-400" /> Power Curve
+                  <div className="bg-[#FFFDF8] p-2.5 rounded-xl border border-[#DCCFB5]">
+                    <div className="text-[11px] text-[#63786C] flex items-center gap-1 font-mono">
+                      <Zap className="w-3 h-3 text-[#C99B43]" /> Power Curve
                     </div>
-                    <div className="font-mono text-slate-200 mt-1 font-semibold">
+                    <div className="font-mono text-[#183B32] mt-1 font-semibold">
                       {Number(region.idle_power_watts)}W &rarr; {Number(region.peak_power_watts)}W
                     </div>
                   </div>
@@ -569,9 +500,9 @@ export function RegionGrid({
               </div>
 
               {/* Footer Latency / Performance */}
-              <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <div className="mt-4 pt-3 border-t border-[#DCCFB5] flex items-center justify-between text-[11px] text-[#63786C] font-mono">
                 <span>Latency: ~{Number(region.network_latency_ms).toFixed(1)}ms</span>
-                <span className="text-emerald-400 font-semibold">Click to Inspect &rarr;</span>
+                <span className="text-[#075442] font-semibold">Inspect Region &rarr;</span>
               </div>
             </div>
           );

@@ -159,6 +159,11 @@ export interface CandidateRanking {
 export interface SchedulingDecisionResponse {
   id: string;
   job_id: string;
+  workload_name?: string | null;
+  workload_type?: WorkloadType | string | null;
+  job_status?: JobStatus | string | null;
+  priority?: number | null;
+  priority_class?: "HIGH" | "MEDIUM" | "LOW" | string | null;
   action: DecisionAction;
   decision_mode?: "CARBON_AWARE" | "CONVENTIONAL_FALLBACK" | "DEFERRED";
   carbon_optimization_applied?: boolean;

@@ -162,6 +162,11 @@ async def evaluate_single_job(
         return DecisionExplainabilityResponse(
             id=uuid.uuid4(),
             job_id=db_job.id,
+            workload_name=db_job.workload_name,
+            workload_type=db_job.workload_type,
+            job_status=db_job.status,
+            priority=db_job.priority,
+            priority_class=db_job.priority_class,
             attempt_id=None,
             selected_region_id=None,
             decision_action=DecisionAction.REJECT.value,
@@ -193,6 +198,11 @@ async def evaluate_single_job(
     return DecisionExplainabilityResponse(
         id=decision.id,
         job_id=decision.job_id,
+        workload_name=db_job.workload_name,
+        workload_type=db_job.workload_type,
+        job_status=db_job.status,
+        priority=db_job.priority,
+        priority_class=db_job.priority_class,
         attempt_id=None,
         selected_region_id=decision.selected_region_id,
         decision_action=decision.decision_action.value if hasattr(decision.decision_action, "value") else str(decision.decision_action),

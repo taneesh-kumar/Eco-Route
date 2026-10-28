@@ -38,7 +38,25 @@ export interface EarthGlobeProps {
   onSelectRegion?: (regionCode: string) => void;
   className?: string;
   height?: string | number;
+  globeOffset?: [number, number];
+  hideLegend?: boolean;
 }
+
+const DEFAULT_GLOBAL_REGIONS = [
+  { id: "r1", code: "eu-central-1", name: "Frankfurt", provider: "AWS", country: "Germany", latitude: 50.1109, longitude: 8.6821, network_latency_ms: 18, is_active: true, current_utilization: 0.62 },
+  { id: "r2", code: "af-south-1", name: "Cape Town", provider: "AWS", country: "South Africa", latitude: -33.9249, longitude: 18.4241, network_latency_ms: 84, is_active: true, current_utilization: 0.38 },
+  { id: "r3", code: "eu-west-2", name: "London", provider: "AWS", country: "United Kingdom", latitude: 51.5074, longitude: -0.1278, network_latency_ms: 12, is_active: true, current_utilization: 0.71 },
+  { id: "r4", code: "eu-west-1", name: "Dublin", provider: "AWS", country: "Ireland", latitude: 53.3498, longitude: -6.2603, network_latency_ms: 22, is_active: true, current_utilization: 0.55 },
+  { id: "r5", code: "eu-north-1", name: "Stockholm", provider: "AWS", country: "Sweden", latitude: 59.3293, longitude: 18.0686, network_latency_ms: 28, is_active: true, current_utilization: 0.32 },
+  { id: "r6", code: "me-central-1", name: "Dubai", provider: "AWS", country: "UAE", latitude: 25.2048, longitude: 55.2708, network_latency_ms: 65, is_active: true, current_utilization: 0.44 },
+  { id: "r7", code: "ap-south-1", name: "Mumbai", provider: "AWS", country: "India", latitude: 19.076, longitude: 72.8777, network_latency_ms: 58, is_active: true, current_utilization: 0.49 },
+  { id: "r8", code: "ap-southeast-1", name: "Singapore", provider: "AWS", country: "Singapore", latitude: 1.3521, longitude: 103.8198, network_latency_ms: 72, is_active: true, current_utilization: 0.65 },
+  { id: "r9", code: "ap-northeast-1", name: "Tokyo", provider: "AWS", country: "Japan", latitude: 35.6762, longitude: 139.6503, network_latency_ms: 95, is_active: true, current_utilization: 0.58 },
+  { id: "r10", code: "ap-southeast-2", name: "Sydney", provider: "AWS", country: "Australia", latitude: -33.8688, longitude: 151.2093, network_latency_ms: 110, is_active: true, current_utilization: 0.42 },
+  { id: "r11", code: "us-east-1", name: "N. Virginia", provider: "AWS", country: "United States", latitude: 38.13, longitude: -78.45, network_latency_ms: 45, is_active: true, current_utilization: 0.81 },
+  { id: "r12", code: "us-west-1", name: "N. California", provider: "AWS", country: "United States", latitude: 37.7749, longitude: -122.4194, network_latency_ms: 78, is_active: true, current_utilization: 0.67 },
+  { id: "r13", code: "sa-east-1", name: "São Paulo", provider: "AWS", country: "Brazil", latitude: -23.5505, longitude: -46.6333, network_latency_ms: 125, is_active: true, current_utilization: 0.39 },
+];
 
 interface GlobePoint extends RegionResponse {
   lat: number;
@@ -96,6 +114,8 @@ export function ReactGlobeEngine({
   onSelectRegion,
   className = "",
   height = "640px",
+  globeOffset: propOffset,
+  hideLegend = false,
 }: EarthGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<any>(null);
@@ -127,14 +147,17 @@ export function ReactGlobeEngine({
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Compute horizontal offset so the globe sits in the right column on desktop
+  // Compute horizontal offset
   const isDesktop = dimensions.width >= 1024;
   const globeOffset: [number, number] = useMemo(() => {
+    if (propOffset !== undefined) {
+      return propOffset;
+    }
     if (isDesktop) {
       return [Math.round(dimensions.width * 0.22), 0];
     }
     return [0, 0];
-  }, [isDesktop, dimensions.width]);
+  }, [propOffset, isDesktop, dimensions.width]);
 
   // Map of carbon observations indexed by region code
   const carbonMap = useMemo(() => {
@@ -145,9 +168,26 @@ export function ReactGlobeEngine({
     return map;
   }, [carbonObservations]);
 
-  // Derive rich dynamic marker data with deterministic asynchronous twinkle phase offsets
+  // Keep the globe legible by showing a small, data-driven set of regions.
+  // Priority is given to the selected/assigned route and its candidates; the
+  // remaining slots use the cleanest currently observed regions.
+  const visibleRegions = useMemo(() => {
+    const pool = (regions.length > 0 ? regions : DEFAULT_GLOBAL_REGIONS) as unknown as RegionResponse[];
+    const preferredCodes = new Set([
+      selectedRegionCode,
+      activeRoute?.targetCode,
+      ...(activeRoute?.candidateCodes || []),
+    ].filter(Boolean));
+
+    const preferred = pool.filter((region) => preferredCodes.has(region.code));
+    const remaining = pool.filter((region) => !preferredCodes.has(region.code));
+
+    return [...preferred, ...remaining].slice(0, 16);
+  }, [regions, selectedRegionCode, activeRoute]);
+
+  // Derive restrained marker data with deterministic, slow brightness changes.
   const markersData: GlobeMarkerData[] = useMemo(() => {
-    return regions.map((region, idx) => {
+    return visibleRegions.map((region, idx) => {
       const lat = Number(region.latitude);
       const lng = Number(region.longitude);
       const obs = carbonMap[region.code];
@@ -156,54 +196,53 @@ export function ReactGlobeEngine({
 
       const isSelected = selectedRegionCode === region.code;
 
-      // Carbon color system: <=150 emerald, 150-400 amber, >400 orange, null slate/gray
-      let color = "#22c55e";
+      // Carbon colour system: emerald for clean, gold for elevated, sage when unknown.
+      let color = "#0B6B50";
       if (intensity === null) {
-        color = "#94a3b8"; // Slate / unverified
+        color = "#8BAE9A";
       } else if (intensity > 400) {
-        color = "#f97316"; // Orange / High
+        color = "#D6A84F";
       } else if (intensity > 150) {
-        color = "#eab308"; // Amber / Moderate
+        color = "#C28B3C";
       }
 
       const ciDisplay =
         intensity != null ? `${intensity.toFixed(0)} gCO₂/kWh` : "Unverified Telemetry";
 
-      // Asynchronous twinkle parameters based on region code characters
+      // Slow, deterministic brightness parameters based on region code characters.
       const charSum = region.code.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0) + idx * 17;
       const phase = (charSum % 628) / 100; // 0 to 6.28 rad
-      const frequency = 1.3 + (charSum % 10) * 0.15; // 1.3 to 2.8 rad/s
+      const frequency = 0.12 + (charSum % 5) * 0.025;
 
       // Rich glassmorphic hover card HTML
       const labelHtml = `
         <div style="
-          background: rgba(9, 17, 34, 0.92);
-          backdrop-filter: blur(12px);
-          border: 1px solid ${isSelected ? "rgba(34, 197, 94, 0.8)" : "rgba(255, 255, 255, 0.12)"};
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6)${isSelected ? ", 0 0 20px rgba(34, 197, 94, 0.35)" : ""};
-          border-radius: 14px;
+          background: #FFF7E8;
+          border: 1px solid ${isSelected ? "#064E3B" : "#D8C9AA"};
+          box-shadow: 0 4px 14px rgba(6, 78, 59, 0.12);
+          border-radius: 6px;
           padding: 10px 14px;
           font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          color: white;
+          color: #123B32;
           min-width: 170px;
           pointer-events: none;
           transform: translate3d(0, -10px, 0);
         ">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;">
-            <span style="font-weight: 800; font-size: 13px; letter-spacing: -0.01em; color: #ffffff;">
+            <span style="font-weight: 800; font-size: 13px; letter-spacing: -0.01em; color: #064e3b;">
               ${region.name}
             </span>
-            <span style="font-family: monospace; font-size: 10px; color: #94a3b8; background: rgba(255, 255, 255, 0.06); padding: 2px 6px; border-radius: 6px;">
+            <span style="font-family: monospace; font-size: 10px; color: #42665a; background: rgba(248, 231, 201, 0.8); padding: 2px 6px; border-radius: 6px;">
               ${region.code}
             </span>
           </div>
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-            <span style="color: #94a3b8;">Carbon Intensity:</span>
+            <span style="color: #42665a;">Carbon intensity:</span>
             <span style="font-family: monospace; font-weight: 700; color: ${color};">
               ${ciDisplay}
             </span>
           </div>
-          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #64748b; font-family: monospace; margin-top: 4px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #42665a; font-family: monospace; margin-top: 4px;">
             <span>${region.provider} &bull; ${region.country}</span>
             <span>${Number(region.network_latency_ms).toFixed(0)}ms latency</span>
           </div>
@@ -225,7 +264,7 @@ export function ReactGlobeEngine({
         labelHtml,
       };
     });
-  }, [regions, carbonMap, selectedRegionCode]);
+  }, [visibleRegions, carbonMap, selectedRegionCode]);
 
   // Standard points data for direct layer compatibility
   const pointsData: GlobePoint[] = useMemo(() => {
@@ -233,7 +272,7 @@ export function ReactGlobeEngine({
       ...m.region,
       lat: m.lat,
       lng: m.lng,
-      size: m.isSelected ? 0.38 : 0.24,
+      size: m.isSelected ? 0.22 : 0.14,
       color: m.color,
       altitude: m.altitude,
       labelHtml: m.labelHtml,
@@ -241,131 +280,141 @@ export function ReactGlobeEngine({
     }));
   }, [markersData]);
 
-  // Subtle Asynchronous Concentric Radar Rings & Ripple Halos for all database regions
+  // Luminous radar ripples at global regional nodes
   const ringsData: GlobeRing[] = useMemo(() => {
-    return regions.map((region, idx) => {
-      const lat = Number(region.latitude);
-      const lng = Number(region.longitude);
-      const obs = carbonMap[region.code];
-      const ci = obs?.carbon_intensity_gco2;
-      const isSelected = region.code === selectedRegionCode || region.code === activeRoute?.targetCode;
+    const keyHubs = new Set([
+      selectedRegionCode,
+      activeRoute?.targetCode,
+      "af-south-1",
+      "eu-central-1",
+      "ap-south-1",
+      "ap-northeast-1",
+      "us-east-1",
+      "ap-southeast-1",
+      "ap-southeast-2",
+    ].filter(Boolean));
 
-      const ringColor =
-        ci === null || ci === undefined
-          ? "#94a3b8"
-          : ci > 400
-            ? "#f97316"
-            : ci > 150
-              ? "#eab308"
-              : "#22c55e";
+    return visibleRegions
+      .filter((region) => keyHubs.has(region.code) || region.code === selectedRegionCode)
+      .slice(0, 8)
+      .map((region, idx) => {
+        const lat = Number(region.latitude);
+        const lng = Number(region.longitude);
+        const isSelected = region.code === selectedRegionCode || region.code === activeRoute?.targetCode;
 
-      const charSum = region.code.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0) + idx * 23;
-      const speed = isSelected ? 2.4 : 0.9 + (charSum % 4) * 0.25;
-      const period = isSelected ? 1300 : 2100 + (charSum % 5) * 400;
-      const maxRadius = isSelected ? 5.2 : 2.8;
+        return {
+          lat,
+          lng,
+          maxR: isSelected ? 3.8 : 2.6,
+          propagationSpeed: isSelected ? 0.8 : 0.5,
+          repeatPeriod: isSelected ? 2400 : 3600 + (idx % 3) * 500,
+          color: (t: number) => {
+            const alpha = Math.max(0, 1 - t) * (isSelected ? 0.9 : 0.55);
+            if (isSelected) return `rgba(245, 199, 93, ${alpha})`;
+            return `rgba(16, 185, 129, ${alpha})`;
+          },
+        };
+      });
+  }, [visibleRegions, selectedRegionCode, activeRoute]);
 
-      return {
-        lat,
-        lng,
-        maxR: maxRadius,
-        propagationSpeed: speed,
-        repeatPeriod: period,
-        color: (t: number) => {
-          const alpha = Math.max(0, 1 - t) * (isSelected ? 0.85 : 0.45);
-          if (ringColor === "#22c55e") return `rgba(34, 197, 94, ${alpha})`;
-          if (ringColor === "#f97316") return `rgba(249, 115, 22, ${alpha})`;
-          if (ringColor === "#eab308") return `rgba(234, 179, 8, ${alpha})`;
-          return `rgba(148, 163, 184, ${alpha * 0.75})`;
-        },
-      };
-    });
-  }, [regions, carbonMap, selectedRegionCode, activeRoute]);
-
-  // Routing Arcs with Photon Flow Animation
+  // Active Worldwide Routing & Telemetry Arcs with Continuous Photon Pulse Flow
   const arcsData: GlobeArc[] = useMemo(() => {
-    if (regions.length < 2) return [];
-
-    const targetCode = activeRoute?.targetCode || selectedRegionCode;
-    const targetReg = targetCode ? regions.find((r) => r.code === targetCode) : null;
+    if (visibleRegions.length < 2) return [];
 
     const arcs: GlobeArc[] = [];
+    const regionMap = new Map(visibleRegions.map((r) => [r.code, r]));
+
+    // Global transcontinental backbone connection pairs
+    const globalConnections: [string, string][] = [
+      ["eu-central-1", "af-south-1"],   // Frankfurt <-> Cape Town
+      ["eu-west-2", "eu-central-1"],    // London <-> Frankfurt
+      ["eu-west-1", "eu-west-2"],       // Dublin <-> London
+      ["eu-central-1", "eu-north-1"],   // Frankfurt <-> Stockholm
+      ["eu-central-1", "me-central-1"], // Frankfurt <-> Dubai
+      ["me-central-1", "ap-south-1"],   // Dubai <-> Mumbai
+      ["ap-south-1", "ap-southeast-1"], // Mumbai <-> Singapore
+      ["ap-southeast-1", "ap-northeast-1"], // Singapore <-> Tokyo
+      ["ap-northeast-1", "ap-southeast-2"], // Tokyo <-> Sydney
+      ["ap-southeast-1", "ap-southeast-2"], // Singapore <-> Sydney
+      ["af-south-1", "ap-south-1"],     // Cape Town <-> Mumbai
+      ["eu-central-1", "us-east-1"],    // Frankfurt <-> N. Virginia
+      ["eu-west-2", "us-east-1"],       // London <-> N. Virginia
+      ["us-east-1", "sa-east-1"],       // N. Virginia <-> São Paulo
+      ["us-east-1", "us-west-1"],       // N. Virginia <-> California
+      ["us-west-1", "ap-northeast-1"],  // California <-> Tokyo
+    ];
+
+    let arcIdx = 0;
+    for (const [codeA, codeB] of globalConnections) {
+      const rA = regionMap.get(codeA);
+      const rB = regionMap.get(codeB);
+      if (rA && rB) {
+        arcs.push({
+          startLat: Number(rA.latitude),
+          startLng: Number(rA.longitude),
+          endLat: Number(rB.latitude),
+          endLng: Number(rB.longitude),
+          color: arcIdx % 2 === 0
+            ? ["rgba(16, 185, 129, 0.95)", "rgba(245, 199, 93, 0.95)"]
+            : ["rgba(245, 199, 93, 0.95)", "rgba(16, 185, 129, 0.95)"],
+          altitude: 0.14 + (arcIdx % 5) * 0.035,
+          stroke: 0.38,
+          dashLength: 0.42,
+          dashGap: 0.26,
+          dashAnimateTime: 3200 + (arcIdx % 4) * 600,
+          isWinning: false,
+        });
+        arcIdx += 1;
+      }
+    }
+
+    // Dynamic Route Overlay when Workload or Region is Selected
+    const targetCode = activeRoute?.targetCode || selectedRegionCode;
+    const targetReg = targetCode ? visibleRegions.find((r) => r.code === targetCode) : null;
 
     if (targetReg) {
       const targetLat = Number(targetReg.latitude);
       const targetLng = Number(targetReg.longitude);
 
-      // Ingress / Origin arc to target
       if (activeRoute?.origin) {
         arcs.push({
           startLat: activeRoute.origin.lat,
           startLng: activeRoute.origin.lng,
           endLat: targetLat,
           endLng: targetLng,
-          color: ["rgba(34, 197, 94, 0.95)", "rgba(14, 165, 233, 0.95)"],
-          altitude: 0.28,
-          stroke: 0.75,
-          dashLength: 0.35,
-          dashGap: 0.15,
-          dashAnimateTime: 1800,
-          isWinning: true,
-        });
-      }
-
-      // Candidate evaluated regions converging to target
-      const candidatePool = activeRoute?.candidateCodes
-        ? regions
-          .filter((r) => r.code !== targetCode && activeRoute.candidateCodes?.includes(r.code))
-          .slice(0, 5)
-        : regions.filter((r) => r.code !== targetCode).slice(0, 4);
-
-      for (const cand of candidatePool) {
-        arcs.push({
-          startLat: Number(cand.latitude),
-          startLng: Number(cand.longitude),
-          endLat: targetLat,
-          endLng: targetLng,
-          color: ["rgba(14, 165, 233, 0.7)", "rgba(34, 197, 94, 0.9)"],
+          color: ["#F5C75D", "#10B981"],
           altitude: 0.22,
           stroke: 0.55,
-          dashLength: 0.4,
+          dashLength: 0.5,
           dashGap: 0.2,
           dashAnimateTime: 2200,
           isWinning: true,
         });
       }
-    } else {
-      // Ambient default network backbone connecting major global hubs
-      const backbonePairs: [string, string][] = [
-        ["us-east-1", "eu-west-2"],
-        ["eu-central-1", "ap-south-1"],
-        ["ap-south-1", "ap-southeast-1"],
-        ["ap-southeast-1", "ap-northeast-1"],
-        ["us-west-2", "ap-northeast-1"],
-      ];
 
-      for (const [codeA, codeB] of backbonePairs) {
-        const rA = regions.find((r) => r.code === codeA);
-        const rB = regions.find((r) => r.code === codeB);
-        if (rA && rB) {
-          arcs.push({
-            startLat: Number(rA.latitude),
-            startLng: Number(rB.longitude ? rA.longitude : 0),
-            endLat: Number(rB.latitude),
-            endLng: Number(rB.longitude),
-            color: ["rgba(14, 165, 233, 0.35)", "rgba(6, 182, 212, 0.2)"],
-            altitude: 0.18,
-            stroke: 0.4,
-            dashLength: 0.5,
-            dashGap: 0.3,
-            dashAnimateTime: 3500,
-            isWinning: false,
-          });
-        }
+      const candidates = activeRoute?.candidateCodes
+        ? visibleRegions.filter((r) => r.code !== targetCode && activeRoute.candidateCodes?.includes(r.code)).slice(0, 3)
+        : visibleRegions.filter((r) => r.code !== targetCode).slice(0, 2);
+
+      for (const cand of candidates) {
+        arcs.push({
+          startLat: Number(cand.latitude),
+          startLng: Number(cand.longitude),
+          endLat: targetLat,
+          endLng: targetLng,
+          color: ["rgba(245, 199, 93, 0.75)", "rgba(16, 185, 129, 0.85)"],
+          altitude: 0.18,
+          stroke: 0.32,
+          dashLength: 0.45,
+          dashGap: 0.25,
+          dashAnimateTime: 3000,
+          isWinning: true,
+        });
       }
     }
 
     return arcs;
-  }, [activeRoute, selectedRegionCode, regions]);
+  }, [activeRoute, selectedRegionCode, visibleRegions]);
 
   // Smooth Camera Point of View when region is selected
   const focusOnRegion = useCallback((code: string) => {
@@ -397,7 +446,7 @@ export function ReactGlobeEngine({
     const group = new THREE.Group();
 
     // 1. Solid Luminous Core (Unlit MeshBasicMaterial ensures high visibility on dark/night side)
-    const coreGeo = new THREE.SphereGeometry(isSelected ? 0.75 : 0.55, 16, 16);
+    const coreGeo = new THREE.SphereGeometry(isSelected ? 0.48 : 0.32, 16, 16);
     const coreMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(d.color),
       transparent: true,
@@ -417,7 +466,7 @@ export function ReactGlobeEngine({
       const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
       grad.addColorStop(0, d.color);
       grad.addColorStop(0.35, d.color);
-      grad.addColorStop(0.7, "rgba(255, 255, 255, 0.25)");
+      grad.addColorStop(0.7, "rgba(255, 247, 232, 0.18)");
       grad.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 64, 64);
@@ -427,24 +476,24 @@ export function ReactGlobeEngine({
       map: spriteTex,
       transparent: true,
       opacity: isSelected ? 0.85 : 0.55,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       depthWrite: false,
     });
     const haloSprite = new THREE.Sprite(spriteMat);
-    const baseScale = isSelected ? 3.6 : 2.2;
+    const baseScale = isSelected ? 2.4 : 1.45;
     haloSprite.scale.set(baseScale, baseScale, 1);
     haloSprite.name = "haloSprite";
     group.add(haloSprite);
 
     // 3. Highlight Ring for Selected Region
     if (isSelected) {
-      const ringGeo = new THREE.RingGeometry(1.2, 1.6, 32);
+      const ringGeo = new THREE.RingGeometry(0.8, 1.05, 32);
       const ringMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(d.color),
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.85,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,
         depthWrite: false,
       });
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
@@ -468,34 +517,34 @@ export function ReactGlobeEngine({
     const phase = d.phase || 0;
     const freq = d.frequency || 1.8;
 
-    // Asynchronous smooth sinusoidal twinkle
+    // Gentle brightness variation keeps nodes legible without a neon pulse.
     const twinkle = Math.sin(time * freq + phase);
-    const scaleFactor = 1 + twinkle * 0.18; // smooth 0.82 - 1.18 pulse
+    const scaleFactor = 1 + twinkle * 0.06;
 
     const core = obj.getObjectByName("coreMesh") as THREE.Mesh;
     if (core) {
       core.scale.setScalar(scaleFactor);
       if (core.material instanceof THREE.MeshBasicMaterial) {
-        core.material.opacity = 0.8 + twinkle * 0.18;
+        core.material.opacity = 0.82 + twinkle * 0.08;
       }
     }
 
     const halo = obj.getObjectByName("haloSprite") as THREE.Sprite;
     if (halo) {
-      const baseScale = (d.isSelected ? 3.6 : 2.2) * (1 + twinkle * 0.22);
+      const baseScale = (d.isSelected ? 2.4 : 1.45) * (1 + twinkle * 0.08);
       halo.scale.set(baseScale, baseScale, 1);
       if (halo.material instanceof THREE.SpriteMaterial) {
-        halo.material.opacity = (d.isSelected ? 0.75 : 0.45) + twinkle * 0.2;
+        halo.material.opacity = (d.isSelected ? 0.65 : 0.32) + twinkle * 0.08;
       }
     }
 
     const beacon = obj.getObjectByName("beaconRing") as THREE.Mesh;
     if (beacon) {
-      const rippleT = (time * 1.6 + phase) % 1;
-      const ringScale = 1 + rippleT * 1.6;
+      const rippleT = (time * 0.32 + phase) % 1;
+      const ringScale = 1 + rippleT * 0.8;
       beacon.scale.setScalar(ringScale);
       if (beacon.material instanceof THREE.MeshBasicMaterial) {
-        beacon.material.opacity = Math.max(0, (1 - rippleT) * 0.8);
+        beacon.material.opacity = Math.max(0, (1 - rippleT) * 0.55);
       }
     }
   }, []);
@@ -508,6 +557,15 @@ export function ReactGlobeEngine({
       const globe = globeRef.current;
       const scene = globe.scene();
       const controls = globe.controls();
+      const globeMaterial = globe.globeMaterial?.();
+
+      if (globeMaterial) {
+        globeMaterial.color?.set(0xffffff);
+        globeMaterial.shininess = 16;
+        if ("specular" in globeMaterial) {
+          globeMaterial.specular?.set("#0B7657");
+        }
+      }
 
       if (controls) {
         controls.autoRotate = autoRotate;
@@ -522,7 +580,7 @@ export function ReactGlobeEngine({
       if (scene && !cloudsMeshRef.current) {
         const cloudTextureLoader = new THREE.TextureLoader();
         cloudTextureLoader.load(
-          "//unpkg.com/three-globe/example/img/earth-clouds.png",
+          "/textures/clouds.png",
           (texture) => {
             const cloudsGeo = new THREE.SphereGeometry(100 * 1.006, 64, 64);
             const cloudsMat = new THREE.MeshStandardMaterial({
@@ -593,18 +651,18 @@ export function ReactGlobeEngine({
   if (!webGlSupported) {
     return (
       <div
-        className={`relative rounded-3xl overflow-hidden select-none bg-gradient-to-b from-[#091122] to-[#040813] border border-white/[0.08] p-6 flex flex-col justify-between ${className}`}
+        className={`relative rounded-3xl overflow-hidden select-none bg-[#FFF8EB] border border-[#DCCFB5] p-6 flex flex-col justify-between ${className}`}
         style={{ height }}
       >
         <div>
           <div className="flex items-center justify-between gap-2 mb-4">
             <div className="flex items-center gap-2">
               <Leaf className="w-4 h-4 text-[#22c55e]" />
-              <span className="font-bold text-sm text-white font-sans">
+              <span className="font-bold text-sm text-[#183B32] font-sans">
                 Global Carbon Grid View
               </span>
             </div>
-            <span className="text-[10px] font-mono text-slate-400 bg-white/[0.05] px-2.5 py-1 rounded-full border border-white/[0.05]">
+            <span className="text-[10px] font-mono text-slate-400 bg-[#F4E4C4] px-2.5 py-1 rounded-full border border-[#DCCFB5] text-[#63786C]">
               2D High-Performance Fallback
             </span>
           </div>
@@ -623,20 +681,21 @@ export function ReactGlobeEngine({
                 <button
                   key={region.code}
                   onClick={() => onSelectRegion?.(region.code)}
-                  className={`p-3 rounded-2xl border text-left transition cursor-pointer backdrop-blur-md ${isSelected
-                      ? "bg-[#0c1833] border-[#22c55e] text-white shadow-[0_0_20px_rgba(34,197,94,0.3)]"
-                      : "bg-[#091122]/70 border-white/[0.08] hover:border-slate-500 text-slate-200"
-                    }`}
+                  className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
+                    isSelected
+                      ? "bg-[#FFFDF8] border-[#075442] text-[#183B32] shadow-xs"
+                      : "bg-[#FFF8EB] border-[#DCCFB5] hover:border-[#075442] text-[#486256]"
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="font-bold text-xs text-white truncate">{region.name}</span>
-                    <span className="text-[10px] font-mono text-slate-400 uppercase">
+                    <span className="font-bold text-xs text-[#183B32] truncate">{region.name}</span>
+                    <span className="text-[10px] font-mono text-[#63786C] uppercase">
                       {region.code}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] font-mono mt-2">
-                    <span className="text-slate-400 text-[10px]">Intensity:</span>
-                    <span className={`font-bold ${isHigh ? "text-amber-400" : "text-[#22c55e]"}`}>
+                    <span className="text-[#63786C] text-[10px]">Intensity:</span>
+                    <span className={`font-bold ${isHigh ? "text-[#8C6212]" : "text-[#075442]"}`}>
                       {intensity != null ? `${intensity.toFixed(0)} gCO₂` : "Verified"}
                     </span>
                   </div>
@@ -667,11 +726,11 @@ export function ReactGlobeEngine({
           width={dimensions.width}
           height={dimensions.height}
           globeOffset={globeOffset}
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-          bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+          globeImageUrl="/textures/earth-emerald-night.jpg"
+          bumpImageUrl="/textures/earth-topology.png"
+          backgroundColor="rgba(0,0,0,0)"
           showAtmosphere={true}
-          atmosphereColor="#0ea5e9"
+          atmosphereColor="#10B981"
           atmosphereAltitude={0.16}
           // Points Layer (Active Cloud Regions with Rich Hover Tooltips)
           pointsData={pointsData}
@@ -728,30 +787,32 @@ export function ReactGlobeEngine({
       </div>
 
       {/* Top Right: Live Carbon Intensity Global View Legend */}
-      <div className="absolute top-4 right-4 z-30 p-3.5 rounded-2xl bg-[#091122]/85 border border-white/[0.08] backdrop-blur-md shadow-2xl min-w-[210px] pointer-events-auto">
+      {!hideLegend && (
+        <div className="absolute top-4 right-4 z-30 p-3.5 rounded-2xl bg-[#FFF8EB]/95 border border-[#DCCFB5] backdrop-blur-md shadow-md min-w-[210px] pointer-events-auto">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="font-bold text-xs text-white font-sans">Live Carbon Intensity</span>
+          <span className="font-bold text-xs text-[#183B32] font-sans">Live Carbon Intensity</span>
           <Leaf className="w-3.5 h-3.5 text-[#22c55e]" />
         </div>
-        <div className="text-[10px] text-slate-400 font-mono mb-2">
+        <div className="text-[10px] text-[#63786C] font-mono mb-2">
           Global Grid &bull; {regions.length} Active Nodes
         </div>
 
         {/* Color Gradient Bar */}
-        <div className="w-full h-1.5 rounded-full bg-gradient-to-r from-[#22c55e] via-amber-400 to-orange-500 shadow-sm" />
+        <div className="w-full h-1.5 rounded-full bg-gradient-to-r from-[#075442] via-[#C99B43] to-rose-600 shadow-sm" />
 
-        <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
+        <div className="flex justify-between text-[10px] font-mono text-[#63786C] mt-1">
           <span className="text-[#22c55e]">&le;150 gCO₂</span>
           <span className="text-amber-400">150-400</span>
           <span className="text-orange-400">&gt;400 gCO₂</span>
         </div>
       </div>
+      )}
 
       {/* Bottom Right: Combined Simulation Toggle & Quick Controls */}
       <div className="absolute bottom-4 right-4 flex items-center gap-2.5 z-30 pointer-events-auto">
         <button
           onClick={() => setAutoRotate((prev) => !prev)}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#091122]/90 hover:bg-[#0f1d38] text-slate-200 text-xs font-mono font-medium border border-white/[0.08] backdrop-blur-md transition cursor-pointer shadow-lg"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#FFF8EB] hover:bg-[#FFFDF8] text-[#183B32] text-xs font-mono font-medium border border-[#DCCFB5] shadow-sm transition cursor-pointer"
         >
           {autoRotate ? (
             <>
@@ -766,10 +827,10 @@ export function ReactGlobeEngine({
           )}
         </button>
 
-        <div className="flex items-center gap-1 bg-[#091122]/90 p-1 rounded-xl border border-white/[0.08] backdrop-blur-md shadow-lg">
+        <div className="flex items-center gap-1 bg-[#FFF8EB] p-1 rounded-xl border border-[#DCCFB5] shadow-sm">
           <button
             onClick={zoomIn}
-            className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+            className="p-1.5 rounded-lg hover:bg-[#F4E4C4] text-[#63786C] hover:text-[#075442] transition cursor-pointer"
             title="Zoom In"
           >
             <ZoomIn className="w-3.5 h-3.5" />
@@ -777,7 +838,7 @@ export function ReactGlobeEngine({
 
           <button
             onClick={zoomOut}
-            className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+            className="p-1.5 rounded-lg hover:bg-[#F4E4C4] text-[#63786C] hover:text-[#075442] transition cursor-pointer"
             title="Zoom Out"
           >
             <ZoomOut className="w-3.5 h-3.5" />
@@ -785,7 +846,7 @@ export function ReactGlobeEngine({
 
           <button
             onClick={resetCamera}
-            className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+            className="p-1.5 rounded-lg hover:bg-[#F4E4C4] text-[#63786C] hover:text-[#075442] transition cursor-pointer"
             title="Reset Camera Orientation"
           >
             <Compass className="w-3.5 h-3.5" />

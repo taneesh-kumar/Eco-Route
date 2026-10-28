@@ -54,6 +54,11 @@ class DecisionResponse(BaseModel):
 
     id: uuid.UUID
     job_id: uuid.UUID
+    workload_name: Optional[str] = None
+    workload_type: Optional[str] = None
+    job_status: Optional[str] = None
+    priority: Optional[int] = None
+    priority_class: Optional[str] = None
     attempt_id: Optional[uuid.UUID] = None
     selected_region_id: Optional[uuid.UUID] = None
     decision_action: str
@@ -78,6 +83,32 @@ class DecisionResponse(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def sanitize_attributes(cls, data: Any) -> Any:
+        # Workload identity belongs to the Job record. Project it onto the
+        # decision response so clients never need to guess from decision mode.
+        if not isinstance(data, dict) and hasattr(data, "job") and data.job is not None:
+            job = data.job
+            for attr in ("workload_name", "workload_type", "job_status", "priority", "priority_class"):
+                current = getattr(data, attr, None)
+                expected = int if attr == "priority" else str
+                if not isinstance(current, expected) and hasattr(job, attr):
+                    try:
+                        setattr(data, attr, getattr(job, attr))
+                    except Exception:
+                        pass
+        if not isinstance(data, dict):
+            # Test doubles and legacy decision rows may expose arbitrary
+            # attributes; never let those leak into typed API fields.
+            for attr in ("workload_name", "workload_type", "job_status", "priority_class"):
+                if not isinstance(getattr(data, attr, None), str):
+                    try:
+                        setattr(data, attr, None)
+                    except Exception:
+                        pass
+            if not isinstance(getattr(data, "priority", None), int):
+                try:
+                    setattr(data, "priority", None)
+                except Exception:
+                    pass
         if hasattr(data, "decision_mode"):
             val = getattr(data, "decision_mode")
             if not isinstance(val, str):

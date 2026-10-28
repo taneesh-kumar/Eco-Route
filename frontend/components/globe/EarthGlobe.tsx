@@ -16,10 +16,10 @@ const DynamicGlobeEngine = dynamic(
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22c55e] opacity-40" />
             <Leaf className="w-5 h-5 text-[#22c55e] animate-pulse" />
           </div>
-          <span className="text-white font-bold text-sm tracking-tight font-sans">
+          <span className="text-[#183B32] font-bold text-sm tracking-tight font-sans">
             Loading Geospatial Topology...
           </span>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-[#63786C]">
             Initializing 3D photorealistic Earth &amp; carbon telemetry
           </span>
         </div>

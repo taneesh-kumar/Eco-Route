@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.execution.deferral_evaluator import DeferredJobEvaluator
 from app.persistence.models.scheduling_decision import SchedulingDecision
@@ -23,7 +24,11 @@ class SchedulingQueryService:
         session: AsyncSession,
     ) -> Optional[SchedulingDecision]:
         """Loads a scheduling decision by ID."""
-        stmt = select(SchedulingDecision).where(SchedulingDecision.id == decision_id)
+        stmt = (
+            select(SchedulingDecision)
+            .where(SchedulingDecision.id == decision_id)
+            .options(selectinload(SchedulingDecision.job))
+        )
         res = await session.execute(stmt)
         return res.scalars().first()
 
@@ -36,6 +41,7 @@ class SchedulingQueryService:
         stmt = (
             select(SchedulingDecision)
             .where(SchedulingDecision.job_id == job_id)
+            .options(selectinload(SchedulingDecision.job))
             .order_by(SchedulingDecision.created_at.desc())
         )
         res = await session.execute(stmt)
@@ -54,6 +60,7 @@ class SchedulingQueryService:
         count_stmt = select(func.count(SchedulingDecision.id))
         query_stmt = (
             select(SchedulingDecision)
+            .options(selectinload(SchedulingDecision.job))
             .order_by(SchedulingDecision.created_at.desc())
             .limit(limit)
             .offset(offset)

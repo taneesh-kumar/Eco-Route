@@ -2,330 +2,101 @@
 
 import { useState } from "react";
 import { ExperimentResultResponse } from "@/lib/types";
-import { Award, Zap, Cloud, Clock, CheckCircle2, AlertCircle, TrendingDown, DollarSign } from "lucide-react";
 
 interface ComparisonChartProps {
   results: ExperimentResultResponse[];
   selectedStrategies?: string[];
 }
 
-export function ComparisonChart({
-  results,
-  selectedStrategies = ["ECOROUTE", "CONVENTIONAL", "CARBON_ONLY", "PERFORMANCE_ONLY", "RANDOM"],
-}: ComparisonChartProps) {
-  const [activeMetric, setActiveMetric] = useState<"Emissions" | "Energy" | "Completion Time" | "Cost">("Emissions");
-  const [hoverTime, setHoverTime] = useState<number | null>(null);
+const metricConfig = [
+  { key: "total_co2eq_grams", label: "Emissions (gCO₂eq)", color: "bg-[#075442]" },
+  { key: "total_energy_kwh", label: "Energy (kWh)", color: "bg-[#063B30]" },
+  { key: "avg_execution_time_seconds", label: "Avg Duration (s)", color: "bg-[#C99B43]" },
+  { key: "avg_latency_ms", label: "Avg Latency (ms)", color: "bg-[#5A7C6E]" },
+] as const;
 
-  // Strategy color mapping
-  const strategyColors: Record<string, { stroke: string; label: string }> = {
-    ECOROUTE: { stroke: "#22c55e", label: "EcoRoute" },
-    CONVENTIONAL: { stroke: "#ef4444", label: "Conventional" },
-    CARBON_ONLY: { stroke: "#06b6d4", label: "Carbon Only" },
-    PERFORMANCE_ONLY: { stroke: "#f59e0b", label: "Performance Only" },
-    RANDOM: { stroke: "#a855f7", label: "Random" },
-  };
+export function ComparisonChart({ results, selectedStrategies }: ComparisonChartProps) {
+  const [metric, setMetric] = useState<(typeof metricConfig)[number]["key"]>("total_co2eq_grams");
+  const visible = results.filter((result) => !selectedStrategies || selectedStrategies.includes(result.scheduler_algorithm));
+  const selectedMetric = metricConfig.find((item) => item.key === metric) || metricConfig[0];
+  const values = visible.map((result: any) => Number(result[metric])).filter(Number.isFinite);
+  const max = Math.max(...values, 0);
 
-  // Find conventional baseline to compare against
-  const conventional = results.find((r) => r.scheduler_algorithm === "CONVENTIONAL");
-  const ecoroute = results.find((r) => r.scheduler_algorithm === "ECOROUTE");
-
-  const convCo2 = conventional ? Number(conventional.total_co2eq_grams) : 56.2;
-  const ecoCo2 = ecoroute ? Number(ecoroute.total_co2eq_grams) : 38.2;
-
-  let savingPct = 32;
-  if (convCo2 > 0 && ecoCo2 > 0) {
-    savingPct = Math.round(((convCo2 - ecoCo2) / convCo2) * 100);
+  if (results.length === 0) {
+    return (
+      <div className="ecoroute-card p-8 text-sm text-[#63786C] font-mono text-center">
+        No benchmark result is available. Run a benchmark above to generate a comparison from persisted results.
+      </div>
+    );
   }
 
-  // Hours ticks
-  const hours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
-
-  // Compute dynamic hourly trajectories based on real benchmark results and activeMetric
-  // Each strategy's trajectory accumulates up to its real total over 24 hours with realistic arrival distribution
-  const trajectoryMultipliers = [0.08, 0.22, 0.38, 0.52, 0.65, 0.77, 0.88, 0.95, 1.0];
-
-  const getMetricTotal = (r?: ExperimentResultResponse): number => {
-    if (!r) return 100;
-    switch (activeMetric) {
-      case "Emissions":
-        return Number(r.total_co2eq_grams) || 100;
-      case "Energy":
-        return Number(r.total_energy_kwh) || 20;
-      case "Completion Time":
-        return (Number(r.avg_execution_time_seconds) * (r.detailed_metrics?.completed_count || 10)) / 3600 || 50;
-      case "Cost":
-        // Standardized cloud energy cost ($0.14/kWh) + compute premium
-        return (Number(r.total_energy_kwh) * 0.14) + (Number(r.avg_latency_ms) * 0.05) || 30;
-      default:
-        return 100;
-    }
-  };
-
-  // Build dynamic curves dictionary for all strategies
-  const dynamicCurves: Record<string, number[]> = {};
-  let maxChartVal = 10;
-
-  ["ECOROUTE", "CONVENTIONAL", "CARBON_ONLY", "PERFORMANCE_ONLY", "RANDOM"].forEach((stratKey) => {
-    const stratRes = results.find((r) => r.scheduler_algorithm === stratKey);
-    const totalVal = getMetricTotal(stratRes);
-    if (totalVal > maxChartVal) maxChartVal = totalVal;
-
-    // Slight variance in accumulation profile per strategy policy
-    const curvePoints = trajectoryMultipliers.map((mult, idx) => {
-      let policyFactor = 1.0;
-      if (stratKey === "CARBON_ONLY" && idx < 4) policyFactor = 0.85; // defers/delays early
-      if (stratKey === "PERFORMANCE_ONLY" && idx < 4) policyFactor = 1.15; // aggressive immediate bursts
-      if (stratKey === "ECOROUTE" && idx < 4) policyFactor = 0.92; // balanced selective deferral
-      return Math.round(totalVal * mult * policyFactor * 100) / 100;
-    });
-    dynamicCurves[stratKey] = curvePoints;
-  });
-
-  const curves = dynamicCurves;
-
   return (
-    <div className="space-y-6 font-sans">
-      {/* Visual Benchmark Curve Panel (Matches Mockup #3) */}
-      <div className="glass-panel rounded-2xl border border-white/[0.08] p-6 sm:p-7 shadow-2xl space-y-6">
-        {/* Metric Tabs Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] bg-[#22c55e]/10 px-2.5 py-0.5 rounded-md border border-[#22c55e]/30 font-semibold">
-              Temporal Trajectory
-            </span>
-            <h3 className="text-lg font-bold text-white mt-1">
-              Total {activeMetric} {activeMetric === "Emissions" ? "(tCO₂)" : activeMetric === "Energy" ? "(MWh)" : "(Hours)"}
-            </h3>
-          </div>
-
-          {/* Metric Selector Tabs */}
-          <div className="flex items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
-            {(["Emissions", "Energy", "Completion Time", "Cost"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setActiveMetric(m)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition cursor-pointer ${
-                  activeMetric === m
-                    ? "bg-[#22c55e] text-slate-950 font-bold shadow-md shadow-emerald-950/40"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
+    <div className="ecoroute-card p-6 sm:p-7 shadow-xs space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-[#DCCFB5] pb-4">
+        <div>
+          <h3 className="text-base font-bold text-[#075442]">Persisted Benchmark Comparison</h3>
+          <p className="text-xs text-[#63786C] mt-0.5">
+            Values are read directly from the selected experiment. Zero synthetic extrapolation.
+          </p>
         </div>
-
-        {/* Multi-Line SVG Line Graph */}
-        <div className="relative h-72 w-full pt-4">
-          {/* Legend Top Right */}
-          <div className="absolute top-0 right-0 flex flex-wrap items-center gap-3 text-xs font-mono bg-slate-950/70 px-3 py-1.5 rounded-xl border border-slate-800/80">
-            {Object.keys(strategyColors).map((key) => {
-              if (!selectedStrategies.includes(key)) return null;
-              const s = strategyColors[key];
-              return (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.stroke }} />
-                  <span className="text-slate-300">{s.label}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* SVG Chart Area */}
-          <svg
-            className="w-full h-full overflow-visible"
-            viewBox="0 0 600 200"
-            preserveAspectRatio="none"
-            onMouseMove={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const xPct = (e.clientX - rect.left) / rect.width;
-              setHoverTime(Math.round(xPct * 24));
-            }}
-            onMouseLeave={() => setHoverTime(null)}
-          >
-            {/* Horizontal Gridlines */}
-            {[0, 50, 100, 150].map((y) => (
-              <line
-                key={y}
-                x1="0"
-                y1={y}
-                x2="600"
-                y2={y}
-                stroke="rgba(255,255,255,0.05)"
-                strokeDasharray="4 4"
-              />
-            ))}
-
-            {/* Strategy Lines */}
-            {Object.keys(curves).map((key) => {
-              if (!selectedStrategies.includes(key)) return null;
-              const pts = curves[key];
-              const s = strategyColors[key];
-              const isEco = key === "ECOROUTE";
-
-              // Map points to SVG coordinates (x: 0..600, y: 190..10)
-              const maxVal = maxChartVal > 0 ? maxChartVal : 100;
-              const svgPoints = pts
-                .map((val, idx) => {
-                  const x = (idx / (pts.length - 1)) * 600;
-                  const y = 190 - (val / maxVal) * 170;
-                  return `${x},${Math.max(10, Math.min(190, y))}`;
-                })
-                .join(" ");
-
-              return (
-                <g key={key}>
-                  <polyline
-                    fill="none"
-                    stroke={s.stroke}
-                    strokeWidth={isEco ? 3 : 1.8}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points={svgPoints}
-                    className="transition-all duration-300"
-                  />
-                  {/* End Dot */}
-                  {pts.length > 0 && (
-                    <circle
-                      cx="600"
-                      cy={Math.max(10, Math.min(190, 190 - (pts[pts.length - 1] / maxVal) * 170))}
-                      r={isEco ? 4.5 : 3}
-                      fill={s.stroke}
-                    />
-                  )}
-                </g>
-              );
-            })}
-
-            {/* Interactive Crosshair Line */}
-            {hoverTime != null && (
-              <line
-                x1={(hoverTime / 24) * 600}
-                y1="0"
-                x2={(hoverTime / 24) * 600}
-                y2="200"
-                stroke="rgba(34, 197, 94, 0.4)"
-                strokeWidth="1.5"
-                strokeDasharray="3 3"
-              />
-            )}
-          </svg>
-
-          {/* X Axis Time Labels */}
-          <div className="flex justify-between text-[11px] font-mono text-slate-500 mt-3 pt-2 border-t border-slate-800/80">
-            <span>0</span>
-            <span>6</span>
-            <span>12</span>
-            <span>18</span>
-            <span>24</span>
-          </div>
-          <div className="text-center text-[10px] font-mono text-slate-500 mt-0.5">
-            Time (hours)
-          </div>
-        </div>
-
-        {/* 4 Bottom Impact Summary Cards (Derived dynamically from simulation results) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-white/[0.06]">
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-2xl sm:text-3xl font-extrabold font-mono text-[#22c55e] block">
-              {results.length > 0 && convCo2 > ecoCo2
-                ? `${((convCo2 - ecoCo2) >= 1000 ? (convCo2 - ecoCo2) / 1000 : (convCo2 - ecoCo2)).toFixed(1)} ${convCo2 - ecoCo2 >= 1000 ? "kg" : "g"}`
-                : "38.2 g"}
-            </span>
-            <span className="text-xs text-slate-400 font-sans mt-0.5 block font-medium">
-              CO₂ Avoided (Delta)
-            </span>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400 block">
-              {savingPct}%
-            </span>
-            <span className="text-xs text-slate-400 font-sans mt-0.5 block font-medium">
-              Lower Emissions
-            </span>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-2xl sm:text-3xl font-extrabold font-mono text-cyan-400 block">
-              {results.length > 0 && ecoroute && conventional && Number(ecoroute.total_energy_kwh) > 0
-                ? `${(Number(conventional.total_energy_kwh) / Number(ecoroute.total_energy_kwh)).toFixed(1)}x`
-                : "1.4x"}
-            </span>
-            <span className="text-xs text-slate-400 font-sans mt-0.5 block font-medium">
-              Energy Efficiency Ratio
-            </span>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-2xl sm:text-3xl font-extrabold font-mono text-white block">
-              {results.length > 0 ? results.length : selectedStrategies.length}
-            </span>
-            <span className="text-xs text-slate-400 font-sans mt-0.5 block font-medium">
-              Strategies Benchmarked
-            </span>
-          </div>
-        </div>
+        <select
+          value={metric}
+          onChange={(event) => setMetric(event.target.value as typeof metric)}
+          className="px-3 py-2 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5] text-xs text-[#183B32] font-mono focus:outline-none focus:border-[#075442]"
+        >
+          {metricConfig.map((item) => (
+            <option key={item.key} value={item.key}>{item.label}</option>
+          ))}
+        </select>
       </div>
 
-      {/* Comprehensive Results Table */}
-      {results.length > 0 && (
-        <div className="glass-panel p-6 sm:p-7 rounded-2xl border border-white/[0.08] space-y-4">
-          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono">
-            5-Variant Empirical Results Matrix
-          </h4>
-          <div className="overflow-x-auto rounded-xl border border-slate-800/80">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800/80">
-                <tr>
-                  <th className="px-4 py-3">Variant</th>
-                  <th className="px-4 py-3 text-right">Total CO₂ (g)</th>
-                  <th className="px-4 py-3 text-right">Energy (kWh)</th>
-                  <th className="px-4 py-3 text-right">Avg Latency (ms)</th>
-                  <th className="px-4 py-3 text-right">Deadline Compliance</th>
-                  <th className="px-4 py-3 text-right">Failure Rate</th>
-                  <th className="px-4 py-3 text-right">Duplicates</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-sans">
-                {results.map((r) => (
-                  <tr
-                    key={r.id}
-                    className={`hover:bg-slate-900/40 transition-colors ${
-                      r.scheduler_algorithm === "ECOROUTE"
-                        ? "bg-emerald-950/20 font-semibold"
-                        : ""
-                    }`}
-                  >
-                    <td className="px-4 py-3 font-mono font-bold text-slate-200">
-                      {r.scheduler_algorithm}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-[#22c55e]">
-                      {Number(r.total_co2eq_grams).toFixed(1)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {Number(r.total_energy_kwh).toFixed(3)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {Number(r.avg_latency_ms).toFixed(1)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {(Number(r.deadline_compliance_rate) * 100).toFixed(1)}%
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">
-                      {(Number(r.failure_rate) * 100).toFixed(1)}%
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-[#22c55e] font-bold">
-                      {r.duplicate_execution_count}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <div className="space-y-4">
+        {visible.map((result: any) => {
+          const value = Number(result[metric]);
+          const width = max > 0 && Number.isFinite(value) ? (value / max) * 100 : 0;
+          return (
+            <div key={result.id} className="grid grid-cols-[160px_1fr_90px] gap-3 items-center">
+              <span className="text-xs font-mono font-bold text-[#183B32] truncate">
+                {result.scheduler_algorithm}
+              </span>
+              <div className="h-4 rounded-full bg-[#EADBCE] overflow-hidden">
+                <div
+                  className={`h-full ${selectedMetric.color} rounded-full transition-all duration-300`}
+                  style={{ width: `${width}%` }}
+                />
+              </div>
+              <span className="text-right text-xs font-mono font-bold text-[#183B32]">
+                {Number.isFinite(value) ? value.toFixed(2) : "N/A"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-[#DCCFB5]">
+        <table className="w-full text-left text-xs font-mono">
+          <thead>
+            <tr>
+              <th className="px-3 py-2.5">Strategy</th>
+              <th className="px-3 py-2.5 text-right">Deadline Compliance</th>
+              <th className="px-3 py-2.5 text-right">Failure Rate</th>
+              <th className="px-3 py-2.5 text-right">Deferral Rate</th>
+              <th className="px-3 py-2.5 text-right">Retries</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EADBCE]">
+            {visible.map((result) => (
+              <tr key={`${result.id}-summary`} className="hover:bg-[#F8EEDC]">
+                <td className="px-3 py-2.5 font-bold text-[#183B32]">{result.scheduler_algorithm}</td>
+                <td className="px-3 py-2.5 text-right text-[#075442] font-bold">{(Number(result.deadline_compliance_rate) * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2.5 text-right text-[#63786C]">{(Number(result.failure_rate) * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2.5 text-right text-[#8C6212] font-semibold">{(Number(result.deferral_rate) * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2.5 text-right text-[#63786C]">{(Number(result.retry_rate) * 100).toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

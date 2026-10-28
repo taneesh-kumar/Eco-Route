@@ -7,7 +7,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "backend/.env"),
+        # Support starting the API from either the repository root or the
+        # backend directory. Local development credentials live in
+        # backend/.env.local and must be loaded explicitly because
+        # `.env.local` is intentionally git-ignored.
+        env_file=(
+            ".env",
+            ".env.local",
+            "backend/.env",
+            "backend/.env.local",
+        ),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

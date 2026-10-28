@@ -9,11 +9,8 @@ import {
   Sliders,
   Check,
   Zap,
-  Play,
   RotateCcw,
   Sparkles,
-  Radio,
-  Clock,
 } from "lucide-react";
 
 interface PipelineVisualizerProps {
@@ -36,59 +33,19 @@ interface StepInfo {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const pipelineSteps: StepInfo[] = [
-  {
-    num: 1,
-    title: "Analyzing workload requirements",
-    subtitle: "vCPU, RAM, SLA deadline slack",
-    details: "Parsing 8 vCPU / 32 GB demand & calculating SLA margin",
-    icon: Cpu,
-  },
-  {
-    num: 2,
-    title: "Fetching real-time carbon data",
-    subtitle: "Electricity Maps REST API stream",
-    details: "Live grid intensity: IN-WE (71 gCO₂), EU-West (62 gCO₂)",
-    icon: Globe,
-  },
-  {
-    num: 3,
-    title: "Evaluating candidate regions",
-    subtitle: "Multi-objective Jr composite scoring",
-    details: "Min-Max normalization across 7 global cluster nodes",
-    icon: Sliders,
-  },
-  {
-    num: 4,
-    title: "Selecting optimal region",
-    subtitle: "Winner: IN-WE (Score: 0.81)",
-    details: "Optimal trade-off: 48% carbon reduction, 142ms latency",
-    icon: Sparkles,
-  },
-  {
-    num: 5,
-    title: "Dispatching to execution queue",
-    subtitle: "Durable PostgreSQL CAS claim",
-    details: "Enqueued to Redis worker with zero duplicate execution",
-    icon: Zap,
-  },
-];
-
 export function PipelineVisualizer({
   isSubmitting = false,
-  workloadName = "vision-training-02",
-  workloadType = "TRAINING",
-  cpuCores = 8,
-  memoryGb = 32,
-  duration = 20,
-  deadlineOffset = 1800,
+  workloadName = "New workload",
+  workloadType = "BATCH",
+  cpuCores = 0,
+  memoryGb = 0,
+  duration = 0,
+  deadlineOffset = 0,
   priority = 5,
 }: PipelineVisualizerProps) {
   const [activeStep, setActiveStep] = useState<number>(1);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  // Dynamically generated steps reflecting the actual workload being configured/deployed
   const dynamicSteps: StepInfo[] = [
     {
       num: 1,
@@ -115,21 +72,20 @@ export function PipelineVisualizer({
       num: 4,
       title: "Multi-Objective Ranking ($J_r$)",
       subtitle: "Minimizing Carbon, Time, Util & Latency",
-      details: `Scoring feasible candidates with weights: w_C(0.40), w_T(0.30), w_U(0.20), w_L(0.10)`,
+      details: "Applying the scheduler configuration recorded for this workload",
       icon: Sparkles,
     },
     {
       num: 5,
       title: "Atomic Dispatch to Worker Queue",
       subtitle: "Zero duplicate execution guarantee",
-      details: `Enqueuing ${workloadName} with durable PostgreSQL CAS claim & idempotency token`,
+      details: `Enqueuing ${workloadName} with durable CAS claim & idempotency token`,
       icon: Zap,
     },
   ];
 
   const pipelineSteps = dynamicSteps;
 
-  // Execution flow animation: triggers during submission or manual preview
   useEffect(() => {
     if (!isSubmitting && !isSimulating) return;
 
@@ -148,60 +104,34 @@ export function PipelineVisualizer({
     return () => clearInterval(interval);
   }, [isSubmitting, isSimulating]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 12;
-    const y = ((e.clientY - rect.top) / rect.height - 0.5) * -12;
-    setMousePos({ x, y });
-  };
-
-  const handleMouseLeave = () => {
-    setMousePos({ x: 0, y: 0 });
-  };
-
   const isRunning = isSubmitting || isSimulating;
 
   return (
-    <div
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transform: `perspective(1000px) rotateX(${mousePos.y}deg) rotateY(${mousePos.x}deg)`,
-        transition: "transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
-      }}
-      className="glass-panel p-6 sm:p-7 rounded-3xl border border-white/[0.1] shadow-2xl flex flex-col justify-between relative overflow-hidden will-change-transform font-sans"
-    >
-      {/* 3D Specular Rim Line */}
-      <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-[#22c55e]/50 via-cyan-400/40 to-transparent pointer-events-none" />
-
-      {/* Atmospheric Background Planetary Glow */}
-      <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-emerald-500/12 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -top-24 -left-24 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-
+    <div className="ecoroute-card p-6 sm:p-7 shadow-xs flex flex-col justify-between relative overflow-hidden font-sans">
       <div className="relative z-10 space-y-6">
         {/* Header with Live Signal Badge & Simulate Button */}
-        <div className="flex items-center justify-between gap-3 pb-4 border-b border-white/[0.08]">
+        <div className="flex items-center justify-between gap-3 pb-4 border-b border-[#DCCFB5]">
           <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-[#22c55e] font-bold">
+            <div className="flex items-center gap-2 text-xs font-mono text-[#075442] font-bold">
               <span className="relative flex h-2 w-2">
                 {isRunning ? (
                   <>
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22c55e] opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22c55e]" />
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#075442] opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#075442]" />
                   </>
                 ) : (
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#22c55e]/80" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#075442]" />
                 )}
               </span>
-              <span>{isRunning ? "Active Optimization Pipeline" : "Autonomous Lifecycle"}</span>
+              <span>{isRunning ? "Scheduling in progress" : "Scheduling workflow"}</span>
             </div>
-            <h3 className="text-xl font-extrabold text-white mt-1 tracking-tight">
+            <h3 className="text-xl font-extrabold text-[#075442] mt-1 tracking-tight">
               What Happens Next?
             </h3>
-            <p className="text-xs text-slate-300 mt-0.5">
+            <p className="text-xs text-[#63786C] mt-0.5">
               {isRunning
-                ? "Evaluating real-time spatial carbon telemetry & compute dispatch..."
-                : "Multi-stage spatial carbon optimization pipeline."}
+                ? "Evaluating current grid data and dispatch requirements..."
+                : "Reviewing workload requirements, regional limits, and dispatch status."}
             </p>
           </div>
 
@@ -211,21 +141,20 @@ export function PipelineVisualizer({
               setIsSimulating(true);
             }}
             disabled={isRunning}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 disabled:opacity-50 text-slate-300 hover:text-white border border-slate-700 text-xs font-mono font-medium transition cursor-pointer shadow-md"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FFFDF8] hover:bg-[#F4E4C4] disabled:opacity-50 text-[#183B32] border border-[#DCCFB5] text-xs font-mono font-semibold transition cursor-pointer shadow-xs"
             title="Preview Execution Flow"
           >
-            <RotateCcw className={`w-3.5 h-3.5 text-[#22c55e] ${isRunning ? "animate-spin" : ""}`} />
+            <RotateCcw className={`w-3.5 h-3.5 text-[#075442] ${isRunning ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">{isRunning ? "Running" : "Preview"}</span>
           </button>
         </div>
 
-        {/* 5-Step 3D Pipeline Execution Flow */}
+        {/* 5-Step Pipeline Execution Flow */}
         <div className="space-y-3 relative">
           {/* Vertical Bus Conduit */}
-          <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-slate-800/80 -z-0">
-            {/* Laser Photon Conduit */}
+          <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-[#DCCFB5] -z-0">
             <div
-              className="w-full bg-gradient-to-b from-[#22c55e] via-emerald-400 to-transparent transition-all duration-300 shadow-[0_0_10px_#22c55e]"
+              className="w-full bg-[#075442] transition-all duration-300"
               style={{
                 height: `${((activeStep - 1) / 4) * 100}%`,
               }}
@@ -235,76 +164,59 @@ export function PipelineVisualizer({
           {pipelineSteps.map((step) => {
             const isDone = step.num < activeStep;
             const isCurrent = step.num === activeStep;
-            const isPending = step.num > activeStep;
-            const Icon = step.icon;
 
             return (
               <div
                 key={step.num}
                 onClick={() => setActiveStep(step.num)}
-                className={`flex items-start gap-3.5 relative z-10 group cursor-pointer transition-all duration-300 ${
-                  isCurrent ? "scale-[1.02]" : "hover:scale-[1.01]"
+                className={`flex items-start gap-3.5 relative z-10 group cursor-pointer transition-all duration-200 ${
+                  isCurrent ? "scale-[1.01]" : ""
                 }`}
               >
-                {/* 3D Holographic Step Node */}
+                {/* Step Node */}
                 <div className="relative shrink-0 mt-1">
                   <div
-                    className={`w-8 h-8 rounded-full border flex items-center justify-center font-mono text-xs font-bold transition-all duration-300 shadow-xl ${
+                    className={`w-8 h-8 rounded-full border flex items-center justify-center font-mono text-xs font-bold transition-all duration-200 shadow-xs ${
                       isDone
-                        ? "bg-[#22c55e] border-[#22c55e] text-slate-950 shadow-[0_0_14px_rgba(34,197,94,0.5)]"
+                        ? "bg-[#075442] border-[#075442] text-[#FFF8EB]"
                         : isCurrent
-                        ? "bg-gradient-to-b from-emerald-500/30 to-slate-950 border-[#22c55e] text-emerald-300 shadow-[0_0_20px_rgba(34,197,94,0.6)]"
-                        : "bg-slate-950 border-slate-800 text-slate-500"
+                        ? "bg-[#063B30] border-[#075442] text-[#FFF8EB] ring-3 ring-[#075442]/20"
+                        : "bg-[#FFFDF8] border-[#DCCFB5] text-[#A5BDAA]"
                     }`}
                   >
                     {isDone ? (
                       <Check className="w-4 h-4 stroke-[3]" />
-                    ) : isCurrent ? (
-                      <span className="relative">
-                        {step.num}
-                        <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-ping" />
-                      </span>
                     ) : (
                       step.num
                     )}
                   </div>
-
-                  {/* Pulsing Radar Ring for Active Step */}
-                  {isCurrent && (
-                    <div className="absolute -inset-1 rounded-full border border-[#22c55e]/50 animate-ping pointer-events-none" />
-                  )}
                 </div>
 
-                {/* 3D Step Information Card */}
+                {/* Step Information Card */}
                 <div
-                  className={`p-3 sm:p-3.5 rounded-2xl border text-xs font-mono w-full transition-all duration-300 relative overflow-hidden ${
+                  className={`p-3 sm:p-3.5 rounded-2xl border text-xs font-mono w-full transition-all duration-200 relative overflow-hidden ${
                     isCurrent
-                      ? "bg-gradient-to-b from-emerald-950/40 to-slate-950/80 border-[#22c55e]/60 text-white shadow-[0_8px_25px_rgba(34,197,94,0.2),inset_0_1px_0_rgba(255,255,255,0.15)]"
+                      ? "bg-[#FFFDF8] border-[#075442] text-[#183B32] shadow-sm"
                       : isDone
-                      ? "bg-slate-950/80 border-slate-800/90 text-slate-300"
-                      : "bg-slate-950/40 border-slate-900 text-slate-500 opacity-60"
+                      ? "bg-[#FFF8EB] border-[#DCCFB5] text-[#486256]"
+                      : "bg-[#F8EEDC]/50 border-[#EADBCE] text-[#8EA396] opacity-75"
                   }`}
                 >
-                  {/* Shimmer Sweep Animation on Active Card */}
-                  {isCurrent && (
-                    <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-emerald-400/10 to-transparent -translate-x-full animate-shimmer pointer-events-none" />
-                  )}
-
                   <div className="flex items-center justify-between gap-2">
                     <span
                       className={`font-bold font-sans ${
-                        isCurrent ? "text-emerald-300 text-[13px]" : isDone ? "text-slate-200" : "text-slate-400"
+                        isCurrent ? "text-[#075442] text-[13px]" : isDone ? "text-[#183B32]" : "text-[#63786C]"
                       }`}
                     >
                       {step.title}
                     </span>
 
                     {isCurrent ? (
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#22c55e] text-slate-950 font-extrabold shadow-sm">
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#075442] text-[#FFF8EB] font-bold">
                         Active
                       </span>
                     ) : isDone ? (
-                      <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold">
+                      <span className="text-[10px] text-[#075442] flex items-center gap-1 font-semibold">
                         <CheckCircle2 className="w-3 h-3" /> Done
                       </span>
                     ) : null}
@@ -312,7 +224,7 @@ export function PipelineVisualizer({
 
                   <div
                     className={`mt-1 text-[11px] font-sans ${
-                      isCurrent ? "text-slate-200" : "text-slate-400"
+                      isCurrent ? "text-[#486256]" : "text-[#63786C]"
                     }`}
                   >
                     {isCurrent ? step.details : step.subtitle}
@@ -324,13 +236,13 @@ export function PipelineVisualizer({
         </div>
       </div>
 
-      {/* Footer Provenance */}
-      <div className="pt-4 mt-6 border-t border-white/[0.08] text-[11px] font-mono text-slate-400 flex items-center justify-between relative z-10">
+      {/* Footer */}
+      <div className="pt-4 mt-6 border-t border-[#DCCFB5] text-[11px] font-mono text-[#63786C] flex items-center justify-between relative z-10">
         <span className="flex items-center gap-1.5">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#22c55e]" />
-          PostgreSQL Durable State
+          <ShieldCheck className="w-3.5 h-3.5 text-[#075442]" />
+          Durable State Protection
         </span>
-        <span className="text-[#22c55e] font-semibold">Zero Fabrication Guarantee</span>
+        <span className="text-[#075442] font-semibold">Auditable Telemetry Policy</span>
       </div>
     </div>
   );

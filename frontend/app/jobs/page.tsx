@@ -6,30 +6,21 @@ import { JobCreatePayload, JobResponse } from "@/lib/types";
 import { WorkloadForm } from "@/components/jobs/WorkloadForm";
 import { JobLifecycleTable } from "@/components/jobs/JobLifecycleTable";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
-import { Layers, Filter, RefreshCw, Database, Server } from "lucide-react";
+import { Layers, Filter, RefreshCw } from "lucide-react";
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [refreshing, setRefreshing] = useState(false);
-  const [health, setHealth] = useState<any>(null);
 
   const fetchJobs = async () => {
     try {
       const params = filterStatus === "ALL" ? { limit: 100 } : { status: filterStatus, limit: 100 };
-      const [jobsRes, healthRes] = await Promise.allSettled([
-        apiClient.getJobs(params),
-        apiClient.getHealth(),
-      ]);
-      if (jobsRes.status === "fulfilled") {
-        setJobs(jobsRes.value.items || []);
-      }
-      if (healthRes.status === "fulfilled") {
-        setHealth(healthRes.value);
-      }
+      const jobsRes = await apiClient.getJobs(params);
+      setJobs(jobsRes.items || []);
     } catch (err) {
-      console.error("Failed to load jobs or health:", err);
+      console.error("Failed to load jobs:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -87,14 +78,11 @@ export default function JobsPage() {
     { label: "Failed", value: "FAILED" },
   ];
 
-  const dbStatus = health?.components?.database?.status || "connected";
-  const redisStatus = health?.components?.redis?.status || "connected";
-
   if (loading) {
     return (
       <LoadingScreen
         message="Loading Workload Telemetry..."
-        submessage="Connecting to distributed execution queue and PostgreSQL durable state"
+        submessage="Connecting to distributed execution queue and durable state"
       />
     );
   }
@@ -102,75 +90,54 @@ export default function JobsPage() {
   return (
     <div className="space-y-8 font-sans">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#DCCFB5]">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] bg-[#22c55e]/10 px-2.5 py-0.5 rounded-md border border-[#22c55e]/30 font-semibold">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#075442] bg-[#075442]/10 px-2.5 py-0.5 rounded-full border border-[#075442]/20 font-semibold">
               Workload Lifecycle Pipeline
             </span>
-            <span className="text-slate-600">&bull;</span>
-            <span className="text-xs text-slate-400 font-mono">Durable State Machine</span>
+            <span className="text-[#A5BDAA]">&bull;</span>
+            <span className="text-xs text-[#63786C] font-mono">Durable audit record</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
-            Workload <span className="text-[#22c55e]">Command Center</span>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#075442]">
+            Workload Management
           </h1>
-          <p className="text-sm text-slate-300 mt-1.5 max-w-2xl">
+          <p className="text-sm text-[#486256] mt-1.5 max-w-2xl">
             Submit compute demands, configure multi-objective optimization weights ($J_r$), and manage execution lifecycles.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
-            <span
-              className={`px-3 py-1 rounded-xl border ${
-                dbStatus === "connected"
-                  ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
-                  : "bg-red-950/60 text-red-400 border-red-800/60"
-              }`}
-            >
-              DB: {dbStatus}
-            </span>
-            <span
-              className={`px-3 py-1 rounded-xl border ${
-                redisStatus === "connected"
-                  ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
-                  : "bg-amber-950/60 text-amber-400 border-amber-800/60"
-              }`}
-            >
-              Queue: {redisStatus === "connected" ? "redis" : "in-memory"}
-            </span>
-          </div>
-
           <button
             onClick={() => {
               setRefreshing(true);
               fetchJobs();
             }}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-mono font-semibold border border-slate-700/80 transition cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FFF8EB] hover:bg-[#FFFDF8] text-[#183B32] text-xs font-mono font-semibold border border-[#DCCFB5] shadow-xs transition cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-[#075442]" : ""}`} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Intake Form & What Happens Next Flow */}
+      {/* Intake Form & Pipeline Visualizer */}
       <WorkloadForm onSubmit={handleCreateJob} loading={refreshing} />
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-white/[0.06]">
-        <span className="text-xs text-slate-400 flex items-center gap-1.5 mr-1 font-mono font-semibold">
-          <Filter className="w-3.5 h-3.5 text-[#22c55e]" /> Filter:
+      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-[#DCCFB5]">
+        <span className="text-xs text-[#63786C] flex items-center gap-1.5 mr-1 font-mono font-semibold">
+          <Filter className="w-3.5 h-3.5 text-[#075442]" /> Filter:
         </span>
         {statuses.map((s) => (
           <button
             key={s.value}
             onClick={() => setFilterStatus(s.value)}
-            className={`text-xs px-3.5 py-1.5 rounded-xl font-mono font-medium transition cursor-pointer ${
+            className={`text-xs px-3.5 py-1.5 rounded-full font-mono font-semibold transition cursor-pointer ${
               filterStatus === s.value
-                ? "bg-[#22c55e] text-slate-950 font-bold shadow-md shadow-emerald-950/40"
-                : "bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800"
+                ? "bg-[#075442] text-[#FFF8EB] shadow-xs"
+                : "bg-[#FFF8EB] text-[#486256] hover:text-[#075442] border border-[#DCCFB5]"
             }`}
           >
             {s.label}

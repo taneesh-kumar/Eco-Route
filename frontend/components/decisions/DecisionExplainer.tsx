@@ -2,32 +2,20 @@
 
 import { useState } from "react";
 import { SchedulingDecisionResponse } from "@/lib/types";
-import { CarbonBadge } from "@/components/regions/CarbonBadge";
 import { SubscoreBreakdown } from "./SubscoreBreakdown";
-import { formatEmissions, formatEmissionsComparison, formatCarbonIntensity } from "@/lib/utils";
+import { formatEmissions, formatEmissionsComparison } from "@/lib/utils";
 import {
   Cpu,
   CheckCircle2,
   Hourglass,
   XCircle,
   HelpCircle,
-  Sliders,
-  Calendar,
   AlertTriangle,
   TrendingDown,
-  ShieldCheck,
   Zap,
-  Info,
   Clock,
   Compass,
-  Layers,
-  ArrowRight,
   Code,
-  Sparkles,
-  Server,
-  Activity,
-  ChevronRight,
-  Check,
   X,
 } from "lucide-react";
 
@@ -42,23 +30,23 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
   if (loading) {
     return (
-      <div className="glass-panel rounded-2xl border border-white/[0.08] p-8 space-y-6">
-        <div className="h-10 w-1/3 bg-slate-800/80 rounded-xl animate-pulse" />
-        <div className="h-80 bg-slate-900/60 rounded-2xl border border-slate-800 animate-pulse" />
-        <div className="h-48 bg-slate-900/40 rounded-xl animate-pulse" />
+      <div className="ecoroute-card p-8 space-y-6">
+        <div className="h-10 w-1/3 bg-[#F4E4C4]/50 rounded-xl animate-pulse" />
+        <div className="h-64 bg-[#F4E4C4]/30 rounded-2xl animate-pulse" />
+        <div className="h-40 bg-[#F4E4C4]/30 rounded-xl animate-pulse" />
       </div>
     );
   }
 
   if (!decision) {
     return (
-      <div className="glass-panel p-16 text-center rounded-2xl border border-white/[0.08] shadow-2xl">
-        <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto mb-4 text-slate-500">
-          <Cpu className="w-8 h-8" />
+      <div className="ecoroute-card p-16 text-center shadow-xs">
+        <div className="w-16 h-16 rounded-2xl bg-[#FFFDF8] border border-[#DCCFB5] flex items-center justify-center mx-auto mb-4 text-[#A5BDAA]">
+          <Cpu className="w-8 h-8 text-[#075442]" />
         </div>
-        <h3 className="text-lg font-bold text-white font-sans">No Decision Selected</h3>
-        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto font-sans">
-          Select a scheduling evaluation from the recent history above or submit a workload in the Execution Center to observe real-time multi-objective optimization.
+        <h3 className="text-lg font-bold text-[#183B32] font-sans">No Decision Selected</h3>
+        <p className="text-xs text-[#63786C] mt-1 max-w-md mx-auto font-sans">
+          Select a scheduling evaluation from the recent history above or submit a workload to observe real-time multi-objective optimization.
         </p>
       </div>
     );
@@ -66,18 +54,25 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
   // Authoritative metrics
   const sel = decision.selected_candidate;
-  const defInfo = decision.deferral_info;
 
   const action = decision.action || "SCHEDULE";
+  const decisionMode = decision.decision_mode || "CARBON_AWARE";
+  const isDeferred = action === "DEFER" || decisionMode === "DEFERRED";
+  const isRejected = action === "REJECT";
   const rationale = decision.rationale || "Algorithmic decision rationale recorded by the scheduling engine.";
   const candidateRankings = decision.candidate_rankings || [];
+  const workloadType = decision.workload_type || "Workload";
+  const priorityLabel = decision.priority_class
+    ? `${decision.priority_class} Priority`
+    : decision.priority != null
+    ? `Priority ${decision.priority}`
+    : null;
+  const workloadLabel = decision.workload_name || `job-${decision.job_id.substring(0, 12)}`;
 
-  const selectedRegionCode = sel?.selected_region_code || decision.selected_region_code || null;
+  const selectedRegionCode = isDeferred
+    ? null
+    : sel?.selected_region_code || decision.selected_region_code || null;
   const carbonIntensity = sel?.carbon_intensity_gco2_per_kwh ?? decision.carbon_intensity_gco2 ?? null;
-  const carbonQuality = sel?.carbon_quality || decision.carbon_quality || "LIVE";
-  const carbonSource = sel?.carbon_source || decision.carbon_source || "ELECTRICITY_MAPS";
-  const carbonIsEstimated = sel?.carbon_is_estimated || carbonQuality === "LIVE_ESTIMATED";
-  const carbonMethod = sel?.carbon_estimation_method || (carbonIsEstimated ? "Electricity Maps Live Model" : null);
 
   const safeWeights = {
     carbon_weight: Number(decision.weights?.carbon_weight ?? 0.4),
@@ -86,7 +81,6 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
     latency_weight: Number(decision.weights?.latency_weight ?? 0.1),
   };
 
-  const decisionMode = decision.decision_mode || "CARBON_AWARE";
   const fallbackReason = decision.fallback_reason;
   const baselineStrategy = decision.baseline_strategy || "CONVENTIONAL";
   const baselineCo2 = decision.baseline_co2eq_grams;
@@ -97,8 +91,8 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
   const comparison = formatEmissionsComparison(baselineCo2, ecorouteCo2, savingsCo2, true);
 
   // Selected candidate object if present in rankings
-  const winningCandidate = candidateRankings.find(
-    (c: any) => c.region_code === selectedRegionCode || c.rank === 1
+  const winningCandidate = candidateRankings.find((c: any) =>
+    selectedRegionCode ? c.region_code === selectedRegionCode : c.rank === 1
   );
 
   const winningScore = winningCandidate
@@ -106,41 +100,57 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
       ? Number(winningCandidate.composite_score).toFixed(2)
       : (winningCandidate as any).cost_score_jr != null
       ? Number((winningCandidate as any).cost_score_jr).toFixed(2)
-      : "0.81"
-    : "0.81";
+      : "N/A"
+    : "N/A";
+  const feasibleCandidates = candidateRankings.filter((candidate: any) => candidate.is_feasible !== false);
+  const nextCandidate = feasibleCandidates.find((candidate: any) => candidate.rank === 2);
+  const nextScore = nextCandidate ? Number(nextCandidate.composite_score ?? (nextCandidate as any).cost_score_jr ?? 0) : null;
+  const scoreGap = nextScore !== null ? Math.max(0, Number(winningScore) - nextScore) : null;
+  const lifecycleStatus = decision.job_status || (isDeferred ? "WAITING" : isRejected ? "FAILED" : action === "EXECUTE" ? "DISPATCHED" : action);
+  const statusExplanation = lifecycleStatus === "WAITING"
+    ? "WAITING: execution is paused until a later evaluation returns EXECUTE."
+    : lifecycleStatus === "DISPATCHED"
+    ? "DISPATCHED: an execution attempt was created; the worker has not completed it yet."
+    : lifecycleStatus === "RUNNING"
+    ? "RUNNING: a worker has claimed the attempt and is executing it."
+    : lifecycleStatus === "COMPLETED"
+    ? "COMPLETED: the worker finished the execution and recorded telemetry."
+    : lifecycleStatus === "FAILED"
+    ? "FAILED: execution did not complete successfully or no feasible path remained."
+    : `Lifecycle status: ${lifecycleStatus}.`;
 
   const getActionStyles = () => {
     switch (action) {
       case "SCHEDULE":
       case "EXECUTE":
         return {
-          bg: "bg-emerald-500/10",
-          border: "border-emerald-500/30",
-          text: "text-emerald-400",
+          bg: "bg-[#075442]/10",
+          border: "border-[#075442]/30",
+          text: "text-[#075442]",
           icon: CheckCircle2,
           title: "Execution Dispatched",
         };
       case "DEFER":
         return {
-          bg: "bg-amber-500/10",
-          border: "border-amber-500/30",
-          text: "text-amber-400",
+          bg: "bg-[#C99B43]/15",
+          border: "border-[#C99B43]/30",
+          text: "text-[#8C6212]",
           icon: Hourglass,
           title: "Workload Deferred (Slack Window)",
         };
       case "REJECT":
         return {
-          bg: "bg-rose-500/10",
-          border: "border-rose-500/30",
-          text: "text-rose-400",
+          bg: "bg-rose-50",
+          border: "border-rose-200",
+          text: "text-rose-700",
           icon: XCircle,
           title: "Infeasible (Rejected)",
         };
       default:
         return {
-          bg: "bg-slate-800",
-          border: "border-slate-700",
-          text: "text-slate-300",
+          bg: "bg-[#FFFDF8]",
+          border: "border-[#DCCFB5]",
+          text: "text-[#183B32]",
           icon: HelpCircle,
           title: action,
         };
@@ -150,9 +160,8 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
   const actionStyle = getActionStyles();
   const ActionIcon = actionStyle.icon;
 
-  // Pipeline Steps
   const pipelineSteps = [
-    { num: 1, title: "Candidate Selection", subtitle: `${candidateRankings.length || 7} regions evaluated` },
+    { num: 1, title: "Candidate Selection", subtitle: `${candidateRankings.length} regions evaluated` },
     { num: 2, title: "Normalization", subtitle: "Multi-objective scoring" },
     { num: 3, title: "Constraint Evaluation", subtitle: "Carbon, latency, SLA" },
     { num: 4, title: "Final Decision", subtitle: "Best overall score" },
@@ -162,53 +171,50 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
     <div className="space-y-8 font-sans">
       {/* Raw Data Modal */}
       {showRawData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-3xl max-h-[85vh] rounded-2xl border border-white/[0.1] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-slate-950/90">
-              <div className="flex items-center gap-2 font-mono text-xs text-slate-200">
-                <Code className="w-4 h-4 text-[#22c55e]" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#063B30]/60 backdrop-blur-sm">
+          <div className="ecoroute-card-elevated w-full max-w-3xl max-h-[85vh] shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#DCCFB5] bg-[#FFF8EB]">
+              <div className="flex items-center gap-2 font-mono text-xs text-[#183B32]">
+                <Code className="w-4 h-4 text-[#075442]" />
                 <span className="font-bold">Raw Decision Payload (JSON)</span>
-                <span className="text-slate-500">&bull;</span>
-                <span className="text-slate-400">UUID: {decision.id}</span>
+                <span className="text-[#A5BDAA]">&bull;</span>
+                <span className="text-[#63786C]">UUID: {decision.id}</span>
               </div>
               <button
                 onClick={() => setShowRawData(false)}
-                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-[#FFFDF8] hover:bg-[#F4E4C4] text-[#63786C] hover:text-[#183B32] border border-[#DCCFB5] flex items-center justify-center transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto font-mono text-xs text-emerald-300 bg-slate-950/90 leading-relaxed">
+            <div className="p-6 overflow-y-auto font-mono text-xs text-[#183B32] bg-[#FFFDF8] leading-relaxed">
               <pre>{JSON.stringify(decision, null, 2)}</pre>
             </div>
           </div>
         </div>
       )}
 
-      {/* Primary Scheduling Decision Canvas (Matches Mockup #1) */}
-      <div className="glass-panel rounded-2xl border border-white/[0.08] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-        {/* Subtle background glow */}
-        <div className="absolute top-1/2 right-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-
+      {/* Primary Scheduling Decision Canvas */}
+      <div className="ecoroute-card p-6 sm:p-8 shadow-xs relative overflow-hidden">
         {/* Section Header with View Raw Data Button */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/[0.06] relative z-10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#DCCFB5] relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] bg-[#22c55e]/10 px-2.5 py-0.5 rounded-md border border-[#22c55e]/30 font-semibold">
-                Autonomous Scheduling Graph
+              <span className="text-[10px] font-mono uppercase tracking-widest text-[#075442] bg-[#075442]/10 px-2.5 py-0.5 rounded-full border border-[#075442]/20 font-semibold">
+                Decision Provenance
               </span>
-              <span className="text-slate-600">&bull;</span>
-              <span className="text-xs text-slate-400 font-mono">Real-Time Routing DAG</span>
+              <span className="text-[#A5BDAA]">&bull;</span>
+              <span className="text-xs text-[#63786C] font-mono">Auditable evaluation record</span>
             </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">Scheduling Decision</h2>
-            <p className="text-xs text-slate-300 mt-1">
+            <h2 className="text-2xl font-extrabold text-[#075442] tracking-tight">Scheduling Decision</h2>
+            <p className="text-xs text-[#63786C] mt-1">
               Understand how EcoRoute selected the optimal region using verified real-time grid carbon and SLA constraints.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${actionStyle.bg} ${actionStyle.border} ${actionStyle.text} font-mono`}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border ${actionStyle.bg} ${actionStyle.border} ${actionStyle.text} font-mono`}
             >
               <ActionIcon className="w-3.5 h-3.5" />
               <span>{actionStyle.title}</span>
@@ -216,9 +222,9 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
             <button
               onClick={() => setShowRawData(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-mono font-semibold border border-slate-700/80 transition cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#FFFDF8] hover:bg-[#F4E4C4] text-[#183B32] text-xs font-mono font-semibold border border-[#DCCFB5] transition cursor-pointer shadow-xs"
             >
-              <Code className="w-3.5 h-3.5 text-[#22c55e]" />
+              <Code className="w-3.5 h-3.5 text-[#075442]" />
               View Raw Data
             </button>
           </div>
@@ -226,19 +232,18 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
         {/* Dynamic Decision Flow Graph */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center pt-6 relative z-10">
-          {/* Column 1: Left Steps & Workload Profile (3 Cols) */}
+          {/* Column 1: Left Steps & Workload Profile (4 Cols) */}
           <div className="lg:col-span-4 space-y-6">
-            {/* Workload Profile Card */}
-            <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 space-y-2">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
+            <div className="p-4 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5] space-y-2">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-[#63786C] font-bold">
                 Workload Identifier
               </div>
-              <div className="font-mono text-sm font-bold text-white truncate">
-                {decision.job_id ? `job-${decision.job_id.substring(0, 12)}` : "workload-eval-01"}
+              <div className="font-mono text-sm font-bold text-[#183B32] truncate">
+                {workloadLabel}
               </div>
               <div className="flex items-center gap-2 text-xs font-mono">
-                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-semibold">
-                  {decisionMode === "CARBON_AWARE" ? "Training • High Priority" : decisionMode}
+                <span className="px-2 py-0.5 rounded bg-[#075442]/10 text-[#075442] border border-[#075442]/20 font-semibold">
+                  {workloadType}{priorityLabel ? ` • ${priorityLabel}` : ""}
                 </span>
               </div>
             </div>
@@ -247,12 +252,12 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
             <div className="space-y-3 pl-1">
               {pipelineSteps.map((step) => (
                 <div key={step.num} className="flex items-start gap-3 group">
-                  <div className="w-6 h-6 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center font-mono text-xs font-bold text-[#22c55e] shrink-0 group-hover:border-[#22c55e] transition-colors">
+                  <div className="w-6 h-6 rounded-full bg-[#FFFDF8] border border-[#DCCFB5] flex items-center justify-center font-mono text-xs font-bold text-[#075442] shrink-0 group-hover:border-[#075442] transition-colors">
                     {step.num}
                   </div>
                   <div>
-                    <div className="text-xs font-bold text-slate-200 font-sans">{step.title}</div>
-                    <div className="text-[11px] text-slate-400 font-mono">{step.subtitle}</div>
+                    <div className="text-xs font-bold text-[#183B32] font-sans">{step.title}</div>
+                    <div className="text-[11px] text-[#63786C] font-mono">{step.subtitle}</div>
                   </div>
                 </div>
               ))}
@@ -261,16 +266,15 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
           {/* Column 2: Candidate Regions Stack (4 Cols) */}
           <div className="lg:col-span-4 space-y-2">
-            <div className="text-[11px] font-mono uppercase text-slate-400 tracking-wider font-semibold mb-2 flex items-center justify-between">
+            <div className="text-[11px] font-mono uppercase text-[#63786C] tracking-wider font-semibold mb-2 flex items-center justify-between">
               <span>Candidate Regions</span>
-              <span className="text-[#22c55e]">{candidateRankings.length} Evaluated</span>
+              <span className="text-[#075442] font-bold">{candidateRankings.length} Evaluated</span>
             </div>
 
             <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
               {candidateRankings.map((cand: any, idx: number) => {
                 const isSelected =
-                  cand.region_code === selectedRegionCode ||
-                  cand.rank === 1;
+                  !isDeferred && (cand.region_code === selectedRegionCode || cand.rank === 1);
 
                 const score =
                   cand.composite_score != null
@@ -286,21 +290,21 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                     onMouseLeave={() => setHoveredCandidate(null)}
                     className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border font-mono text-xs transition-all ${
                       isSelected
-                        ? "bg-emerald-500/15 border-emerald-500/60 shadow-md shadow-emerald-950/40 text-emerald-300 font-bold"
+                        ? "bg-[#FFFDF8] border-[#075442] shadow-xs text-[#075442] font-bold"
                         : hoveredCandidate === cand.region_code
-                        ? "bg-slate-900 border-slate-700 text-slate-200"
-                        : "bg-slate-950/60 border-slate-800/80 text-slate-300"
+                        ? "bg-[#FFFDF8] border-[#075442] text-[#183B32]"
+                        : "bg-[#FFF8EB] border-[#DCCFB5] text-[#486256]"
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <div
                         className={`w-2 h-2 rounded-full ${
-                          isSelected ? "bg-[#22c55e] animate-pulse" : "bg-slate-600"
+                          isSelected ? "bg-[#075442]" : "bg-[#A5BDAA]"
                         }`}
                       />
                       <span>{cand.region_code}</span>
                     </div>
-                    <span className={isSelected ? "text-emerald-300" : "text-slate-400"}>
+                    <span className={isSelected ? "text-[#075442] font-bold" : "text-[#63786C]"}>
                       Score: {score}
                     </span>
                   </div>
@@ -311,20 +315,19 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
           {/* Column 3: Selected Winning Region Node & Telemetry (4 Cols) */}
           <div className="lg:col-span-4 flex flex-col justify-center">
-            {/* The Glowing Target Node */}
-            <div className="p-5 rounded-2xl bg-gradient-to-b from-emerald-950/30 to-slate-950/80 border-2 border-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.15)] space-y-4 relative">
-              <div className="flex items-center justify-between pb-3 border-b border-emerald-500/20">
+            <div className="p-5 rounded-2xl bg-[#FFFDF8] border-2 border-[#075442] shadow-xs space-y-4 relative">
+              <div className="flex items-center justify-between pb-3 border-b border-[#DCCFB5]">
                 <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold block">
-                    Selected Region
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#075442] font-bold block">
+                    {isDeferred ? "Best Candidate (Not Assigned)" : "Selected Region"}
                   </span>
-                  <span className="text-xl font-extrabold text-white font-sans">
-                    {selectedRegionCode || "India"}
+                  <span className="text-xl font-extrabold text-[#183B32] font-sans">
+                    {selectedRegionCode || (isDeferred ? "No region assigned" : "Pending")}
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-mono text-slate-400 block">Jr Score</span>
-                  <span className="text-base font-bold font-mono text-emerald-400">
+                  <span className="text-[10px] font-mono text-[#63786C] block">Jr Score</span>
+                  <span className="text-base font-bold font-mono text-[#075442]">
                     {winningScore}
                   </span>
                 </div>
@@ -333,15 +336,15 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
               {/* Telemetry Output List */}
               <div className="space-y-2.5 text-xs font-mono">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Carbon Intensity</span>
-                  <span className="text-emerald-300 font-bold">
-                    {carbonIntensity != null ? `${Number(carbonIntensity).toFixed(1)} gCO₂/kWh` : "Verified Grid Live"}
+                  <span className="text-[#63786C]">Carbon Intensity</span>
+                  <span className="text-[#075442] font-bold">
+                    {carbonIntensity != null ? `${Number(carbonIntensity).toFixed(1)} gCO₂/kWh` : "Verified Live"}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Estimated Energy</span>
-                  <span className="text-slate-200">
+                  <span className="text-[#63786C]">Estimated Energy</span>
+                  <span className="text-[#183B32]">
                     {sel?.energy_kwh != null
                       ? `${Number(sel.energy_kwh).toFixed(3)} kWh`
                       : baselineCo2 != null
@@ -351,89 +354,97 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Estimated Emissions</span>
-                  <span className="text-slate-200">
+                  <span className="text-[#63786C]">Estimated Emissions</span>
+                  <span className="text-[#183B32]">
                     {ecorouteCo2 != null ? formatEmissions(ecorouteCo2, true, true) : "Optimized Baseline"}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Latency</span>
-                  <span className="text-slate-200">
+                  <span className="text-[#63786C]">Latency</span>
+                  <span className="text-[#183B32]">
                     {winningCandidate?.raw_latency_ms != null
                       ? `${Number(winningCandidate.raw_latency_ms).toFixed(1)} ms`
-                      : "Network Optimal"}
+                      : "Optimal"}
                   </span>
                 </div>
               </div>
 
-              {/* Status Badge */}
-              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-center gap-2 text-xs font-bold text-emerald-400 font-sans">
-                <CheckCircle2 className="w-4 h-4" />
-                Meets All Constraints
+              <div className="pt-2 border-t border-[#DCCFB5] flex items-center justify-center gap-2 text-xs font-bold text-[#075442] font-sans">
+                <CheckCircle2 className="w-4 h-4 text-[#075442]" />
+                Meets All SLA &amp; Carbon Constraints
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rationale & Deferral Info */}
-      <div className="glass-panel p-6 sm:p-7 rounded-2xl border border-white/[0.08] space-y-4">
-        <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+      {/* Rationale & Review */}
+      <div className="ecoroute-card p-6 sm:p-7 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-[#DCCFB5] pb-3">
           <div className="flex items-center gap-2">
-            <Compass className="w-4 h-4 text-[#22c55e]" />
-            <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-              Algorithmic Decision Provenance &amp; Deferral Analysis
+            <Compass className="w-4 h-4 text-[#075442]" />
+            <h4 className="text-xs font-bold text-[#075442] uppercase tracking-wider font-mono">
+              Scheduling Decision Provenance &amp; Deferral Review
             </h4>
           </div>
-          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+          <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full ecoroute-badge-emerald font-bold">
             Policy: {decisionMode}
           </span>
         </div>
 
-        {/* Clear Explanation Cards: Immediate vs Deferred */}
-        <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3 font-sans">
+        <div className="p-4 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5] space-y-3 font-sans">
           <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 mt-0.5">
-              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+            <div className={`w-6 h-6 rounded-full ${actionStyle.bg} border ${actionStyle.border} flex items-center justify-center shrink-0 mt-0.5`}>
+              <ActionIcon className={`w-3.5 h-3.5 ${actionStyle.text}`} />
             </div>
             <div className="space-y-1">
-              <div className="text-xs font-bold text-slate-100">
-                Decision Summary: Dispatched to Best Candidate ({selectedRegionCode || "Optimal"}) Immediately
+              <div className="text-xs font-bold text-[#183B32]">
+                {isDeferred
+                  ? "Decision Summary: Deferred — no region assigned"
+                  : isRejected
+                  ? "Decision Summary: Rejected — workload is not schedulable"
+                  : `Decision Summary: ${lifecycleStatus} in ${selectedRegionCode || "the best candidate"}`}
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
+              <p className="text-xs text-[#486256] leading-relaxed">
                 {rationale}
               </p>
+              <p className="text-[11px] text-[#075442] font-mono mt-2 font-semibold">{statusExplanation}</p>
             </div>
           </div>
 
-          {/* Context Explainer Box: What does this mean? */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
-            <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
-              <div className="text-slate-400 font-mono text-[10px] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
-                <Clock className="w-3 h-3 text-cyan-400" /> Why Not Defer to the Future?
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-[#DCCFB5] text-xs">
+            <div className="p-3.5 rounded-lg bg-[#FFF8EB] border border-[#DCCFB5]">
+              <div className="text-[#075442] font-mono text-[10px] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
+                <Clock className="w-3 h-3 text-[#075442]" /> {isDeferred ? "Why Defer to the Future?" : "Why Not Defer to the Future?"}
               </div>
-              <p className="text-slate-300 text-[11px] leading-relaxed">
-                EcoRoute deferral policy requires a verified future grid forecast showing at least a <strong className="text-white">15.0% carbon drop</strong> within the job&apos;s deadline slack window. Because immediate dispatch in <span className="text-emerald-400 font-mono font-bold">{selectedRegionCode || "the winner"}</span> already provides the lowest feasible cost score, holding the workload would introduce unnecessary latency without guaranteed carbon benefits.
+              <p className="text-[#486256] text-[11px] leading-relaxed">
+                {isDeferred
+                  ? `The workload remains WAITING because the scheduler found a valid deferral opportunity within the deadline slack window. Dispatch occurs when cleaner grid conditions approach.`
+                  : isRejected
+                  ? "The workload cannot be dispatched because no candidate satisfies the hard operational constraints before its deadline."
+                  : <>All {feasibleCandidates.length} feasible regions were scored for <strong className="text-[#183B32]">{workloadLabel}</strong>. <span className="text-[#075442] font-mono font-bold">{selectedRegionCode || "The selected region"}</span> was dispatched because it had the lowest composite penalty ({winningScore}); no forecast justified delaying this workload.</>}
               </p>
             </div>
 
-            <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
-              <div className="text-slate-400 font-mono text-[10px] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
-                <Zap className="w-3 h-3 text-emerald-400" /> Best Candidate vs Expected Range
+            <div className="p-3.5 rounded-lg bg-[#FFF8EB] border border-[#DCCFB5]">
+              <div className="text-[#075442] font-mono text-[10px] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
+                <Zap className="w-3 h-3 text-[#075442]" /> Best Candidate vs Expected Range
               </div>
-              <p className="text-slate-300 text-[11px] leading-relaxed">
-                Among all {candidateRankings.length} candidate regions evaluated, composite scores ranged from <span className="text-emerald-400 font-mono font-bold">{winningScore} (Rank #1)</span> up to <span className="text-slate-400 font-mono">{candidateRankings.length > 1 ? Number((candidateRankings[candidateRankings.length - 1] as any).composite_score ?? (candidateRankings[candidateRankings.length - 1] as any).cost_score_jr ?? 0.85).toFixed(2) : "0.85"}</span>. Region <span className="text-emerald-400 font-mono font-bold">{selectedRegionCode}</span> minimized total penalty $J_r$.
+              <p className="text-[#486256] text-[11px] leading-relaxed">
+                {isDeferred
+                  ? <>The current best candidate is <span className="text-[#075442] font-mono font-bold">{winningCandidate?.region_code || "pending"}</span> at Jr {winningScore}, but it is only a planning result and has not been dispatched.</>
+                  : <>Among {candidateRankings.length} evaluated regions, <span className="text-[#075442] font-mono font-bold">{selectedRegionCode || "the winner"}</span> ranked #1 at Jr {winningScore}{nextScore !== null && nextCandidate ? <>; {nextCandidate.region_code} ranked #2 at Jr {nextScore.toFixed(2)}, a gap of {scoreGap?.toFixed(2)}</> : null}.</>}
               </p>
             </div>
           </div>
         </div>
 
         {fallbackReason && (
-          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-[#8C6212] text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#C99B43]" />
             <div>
-              <div className="font-semibold uppercase tracking-wider font-mono text-[11px] text-amber-400 mb-0.5">
+              <div className="font-bold uppercase tracking-wider font-mono text-[11px] mb-0.5">
                 Conventional Fallback Renormalization Applied
               </div>
               <p className="leading-relaxed font-sans">{fallbackReason}</p>
@@ -444,66 +455,71 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
       {/* Counterfactual Conventional Baseline Comparison */}
       {baselineStrategy && (
-        <div className="glass-panel p-6 sm:p-7 rounded-2xl border border-white/[0.08] space-y-4">
+        <div className="ecoroute-card p-6 sm:p-7 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-[#22c55e]" /> Counterfactual Baseline Comparison
+            <h4 className="text-xs font-bold text-[#075442] uppercase tracking-wider font-mono flex items-center gap-2">
+              <TrendingDown className="w-4 h-4 text-[#075442]" /> Counterfactual Baseline Comparison
             </h4>
-            <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-lg bg-slate-900 text-slate-400 border border-slate-800">
+            <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-[#FFFDF8] text-[#486256] border border-[#DCCFB5] font-semibold">
               Baseline: {baselineStrategy}
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-              <div className="text-[11px] text-slate-400 font-mono">Baseline Estimated Emissions</div>
-              <div className="text-xl font-bold font-mono text-slate-200 mt-1">
+            <div className="p-4 rounded-xl bg-[#FFFDF8] border border-[#DCCFB5]">
+              <div className="text-[11px] text-[#63786C] font-mono font-semibold">Baseline Estimated Emissions</div>
+              <div className="text-xl font-extrabold font-mono text-[#183B32] mt-1">
                 {comparison.baselineFormatted}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5 font-sans">Non-carbon conventional scheduler</div>
+              <div className="text-[10px] text-[#63786C] mt-0.5 font-sans">Non-carbon conventional scheduler</div>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-emerald-500/30">
-              <div className="text-[11px] text-slate-400 font-mono">EcoRoute Estimated Emissions</div>
-              <div className="text-xl font-bold font-mono text-emerald-400 mt-1">
+            <div className="p-4 rounded-xl bg-[#FFFDF8] border border-[#075442]/30">
+              <div className="text-[11px] text-[#075442] font-mono font-semibold">EcoRoute Estimated Emissions</div>
+              <div className="text-xl font-extrabold font-mono text-[#075442] mt-1">
                 {comparison.ecorouteFormatted}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5 font-sans">Optimized spatial-temporal routing</div>
+              <div className="text-[10px] text-[#63786C] mt-0.5 font-sans">Optimized spatial-temporal routing</div>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-950/60 border border-cyan-500/30">
-              <div className="text-[11px] text-slate-400 font-mono">Estimated Emissions Reduction</div>
-              <div className="text-xl font-bold font-mono text-cyan-400 mt-1">
+            <div className="p-4 rounded-xl bg-[#FFFDF8] border border-[#C99B43]/40">
+              <div className="text-[11px] text-[#8C6212] font-mono font-semibold">Estimated Emissions Reduction</div>
+              <div className="text-xl font-extrabold font-mono text-[#8C6212] mt-1">
                 {comparison.reductionFormatted}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5 font-sans">Zero fabrication verified delta</div>
+              <div className="text-[10px] text-[#63786C] mt-0.5 font-sans">Recorded emissions reduction</div>
             </div>
           </div>
         </div>
       )}
 
       {/* Subscore Breakdown */}
-      <SubscoreBreakdown candidates={candidateRankings} weights={safeWeights} />
+      <SubscoreBreakdown
+        candidates={candidateRankings}
+        weights={safeWeights}
+        selectedRegionCode={selectedRegionCode}
+        action={action}
+      />
 
-      {/* Candidate Ranking Matrix */}
-      <div className="glass-panel p-6 sm:p-7 rounded-2xl border border-white/[0.08] space-y-4">
+      {/* Candidate Ranking Matrix Table */}
+      <div className="ecoroute-card p-6 sm:p-7 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono">
+          <h4 className="text-xs font-bold text-[#075442] uppercase tracking-wider font-mono">
             Candidate Region Ranking Matrix
           </h4>
-          <span className="text-[11px] text-slate-500 font-mono">
+          <span className="text-[11px] text-[#63786C] font-mono">
             N(C) = 0.00 represents lowest carbon objective in feasible set
           </span>
         </div>
 
         {candidateRankings.length === 0 ? (
-          <div className="p-6 text-center text-xs text-slate-400 rounded-xl border border-slate-800 bg-slate-950/40 font-mono">
+          <div className="p-6 text-center text-xs text-[#63786C] rounded-xl border border-[#DCCFB5] bg-[#FFFDF8] font-mono">
             No candidate regional evaluations recorded for this decision.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-800/80">
+          <div className="overflow-x-auto rounded-xl border border-[#DCCFB5]">
             <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <thead>
                 <tr>
                   <th className="px-4 py-3">Rank</th>
                   <th className="px-4 py-3">Region</th>
@@ -516,7 +532,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                   <th className="px-4 py-3 text-right">Projected Util</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-sans">
+              <tbody className="divide-y divide-[#EADBCE] font-sans">
                 {candidateRankings.map((cand: any) => {
                   const isFeasible =
                     cand.is_feasible ??
@@ -524,6 +540,8 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                       cand.rank > 0 &&
                       !cand.rejection_reason &&
                       (cand.composite_score != null || cand.cost_score_jr != null));
+                  const isSelectedExecution = action === "EXECUTE" && cand.region_code === selectedRegionCode;
+                  const isBestUnassigned = action === "DEFER" && cand.rank === 1;
                   const compScore =
                     cand.composite_score != null
                       ? Number(cand.composite_score)
@@ -559,9 +577,9 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                   return (
                     <tr
                       key={cand.region_id || cand.region_code}
-                      className={`hover:bg-slate-900/50 transition-colors ${
-                        cand.rank === 1 && isFeasible
-                          ? "bg-emerald-950/20 font-semibold"
+                      className={`hover:bg-[#F8EEDC] transition-colors ${
+                        isSelectedExecution
+                          ? "bg-[#FFFDF8] font-semibold"
                           : !isFeasible
                           ? "opacity-50"
                           : ""
@@ -570,47 +588,49 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                       <td className="px-4 py-3 font-mono">
                         {isFeasible ? (
                           <span
-                            className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                              cand.rank === 1
-                                ? "bg-[#22c55e] text-slate-950"
-                                : "bg-slate-800 text-slate-300"
+                            className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              isSelectedExecution
+                                ? "bg-[#075442] text-[#FFF8EB]"
+                                : "bg-[#FFFDF8] text-[#486256] border border-[#DCCFB5]"
                             }`}
                           >
                             #{cand.rank}
                           </span>
                         ) : (
-                          <span className="text-rose-400 text-xs font-mono">Infeasible</span>
+                          <span className="text-rose-700 text-xs font-mono font-bold">Infeasible</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-mono text-slate-100 font-bold">
+                      <td className="px-4 py-3 font-mono text-[#183B32] font-bold">
                         {cand.region_code}
                       </td>
                       <td className="px-4 py-3">
                         {isFeasible ? (
-                          <span className="text-emerald-400 font-mono text-[11px]">Feasible</span>
+                          <span className={`font-mono text-[11px] ${isSelectedExecution ? "text-[#075442] font-bold" : isBestUnassigned ? "text-[#8C6212] font-semibold" : "text-[#63786C]"}`}>
+                            {isSelectedExecution ? "Selected execution target" : isBestUnassigned ? "Best feasible (deferred)" : "Feasible"}
+                          </span>
                         ) : (
-                          <span className="text-rose-400 font-mono text-[11px] flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3" />
+                          <span className="text-rose-700 font-mono text-[11px] flex items-center gap-1 font-semibold">
+                            <AlertTriangle className="w-3 h-3 text-rose-600" />
                             {cand.rejection_reason || "Constraint Violation"}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                      <td className="px-4 py-3 text-right font-mono text-[#075442] font-extrabold">
                         {isFeasible && compScore != null ? compScore.toFixed(4) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-teal-300">
+                      <td className="px-4 py-3 text-right font-mono text-[#183B32]">
                         {rawCI != null ? `${rawCI.toFixed(1)} gCO₂/kWh` : "N/A"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-200">
+                      <td className="px-4 py-3 text-right font-mono text-[#183B32]">
                         {rawEmissions != null ? formatEmissions(rawEmissions, true, true) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      <td className="px-4 py-3 text-right font-mono text-[#63786C]">
                         {rawDuration != null ? `${rawDuration.toFixed(1)}s` : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      <td className="px-4 py-3 text-right font-mono text-[#63786C]">
                         {rawLatency != null ? `${rawLatency.toFixed(1)} ms` : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-300">
+                      <td className="px-4 py-3 text-right font-mono text-[#63786C]">
                         {projUtil != null ? `${(projUtil * 100).toFixed(1)}%` : "—"}
                       </td>
                     </tr>

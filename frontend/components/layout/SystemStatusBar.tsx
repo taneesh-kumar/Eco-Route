@@ -1,7 +1,7 @@
 "use client";
 
 import { HealthResponse } from "@/lib/types";
-import { Activity, Database, Server, Zap, ShieldCheck } from "lucide-react";
+import { Activity, Globe, ShieldCheck, Zap } from "lucide-react";
 
 interface SystemStatusBarProps {
   health: HealthResponse | null;
@@ -11,53 +11,43 @@ interface SystemStatusBarProps {
 
 export function SystemStatusBar({
   health,
-  regionCount = 7,
+  regionCount = 6,
   activeWorkloadsCount = 0,
 }: SystemStatusBarProps) {
-  const dbStatus = health?.components?.database?.status || "connected";
-  const redisStatus = health?.components?.redis?.status || "connected";
   const isHealthy = health?.status === "healthy" || health?.status === "degraded" || !health;
 
   return (
-    <div className="w-full bg-[#080d16]/90 border-b border-white/[0.05] py-1.5 px-4 sm:px-8 text-xs font-mono text-slate-400 flex flex-wrap items-center justify-between gap-3 backdrop-blur">
+    <div className="w-full bg-[#FFF8EB]/90 border border-[#DCCFB5] rounded-xl py-2 px-4 sm:px-6 text-xs text-[#486256] flex flex-wrap items-center justify-between gap-3 shadow-xs">
       <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${isHealthy ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
-          <span className="text-slate-300 font-medium">EcoRoute Engine: {isHealthy ? "Operational" : "Degraded"}</span>
-        </div>
-
-        <span className="hidden sm:inline text-slate-700">&bull;</span>
-
-        <div className="hidden sm:flex items-center gap-1.5 text-[11px]">
-          <Database className="w-3 h-3 text-slate-400" />
-          <span>PostgreSQL:</span>
-          <span className={dbStatus === "connected" ? "text-emerald-400" : "text-amber-400"}>
-            {dbStatus}
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isHealthy ? "bg-[#075442] animate-pulse" : "bg-amber-500"}`} />
+          <span className="text-[#183B32] font-semibold">
+            EcoRoute Engine: {isHealthy ? "Operational" : "Monitoring"}
           </span>
         </div>
 
-        <span className="hidden md:inline text-slate-700">&bull;</span>
+        <span className="hidden sm:inline text-[#C4B495]">&bull;</span>
 
-        <div className="hidden md:flex items-center gap-1.5 text-[11px]">
-          <Server className="w-3 h-3 text-slate-400" />
-          <span>Redis Queue:</span>
-          <span className={redisStatus === "connected" ? "text-emerald-400" : "text-amber-400"}>
-            {redisStatus === "connected" ? "connected" : "in-memory fallback"}
-          </span>
+        <div className="flex items-center gap-1.5 text-[12px] text-[#486256]">
+          <Globe className="w-3.5 h-3.5 text-[#075442]" />
+          <span>{regionCount} Global Regions Active</span>
         </div>
+
+        {activeWorkloadsCount > 0 && (
+          <>
+            <span className="hidden md:inline text-[#C4B495]">&bull;</span>
+            <div className="hidden md:flex items-center gap-1.5 text-[12px] text-[#486256]">
+              <Activity className="w-3.5 h-3.5 text-[#0B7657]" />
+              <span>{activeWorkloadsCount} Running Workloads</span>
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="flex items-center gap-4 text-[11px]">
-        <div className="flex items-center gap-1.5 text-slate-300">
-          <Activity className="w-3 h-3 text-emerald-400" />
-          <span>7 Cloud Regions Online</span>
-        </div>
-
-        <span className="hidden sm:inline text-slate-700">&bull;</span>
-
-        <div className="hidden sm:flex items-center gap-1.5 text-cyan-400">
-          <ShieldCheck className="w-3 h-3 text-cyan-400" />
-          <span>Verified Electricity Maps Telemetry</span>
+      <div className="flex items-center gap-4 text-[12px]">
+        <div className="flex items-center gap-1.5 text-[#075442] font-medium">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#075442]" />
+          <span>Verified Grid Telemetry</span>
         </div>
       </div>
     </div>
