@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SchedulingDecisionResponse } from "@/lib/types";
 import { CarbonBadge } from "@/components/regions/CarbonBadge";
 import { SubscoreBreakdown } from "./SubscoreBreakdown";
@@ -28,6 +28,7 @@ import {
   Activity,
   ChevronRight,
   Check,
+  Copy,
   X,
 } from "lucide-react";
 
@@ -39,6 +40,35 @@ interface DecisionExplainerProps {
 export function DecisionExplainer({ decision, loading = false }: DecisionExplainerProps) {
   const [showRawData, setShowRawData] = useState(false);
   const [hoveredCandidate, setHoveredCandidate] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Handle Escape key and body scroll lock for raw data modal
+  useEffect(() => {
+    if (!showRawData) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowRawData(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [showRawData]);
+
+  const handleCopyJson = async () => {
+    if (!decision) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(decision, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy JSON:", err);
+    }
+  };
 
   if (loading) {
     return (
@@ -106,8 +136,33 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
       ? Number(winningCandidate.composite_score).toFixed(2)
       : (winningCandidate as any).cost_score_jr != null
       ? Number((winningCandidate as any).cost_score_jr).toFixed(2)
-      : "0.81"
-    : "0.81";
+      : "—"
+    : "—";
+
+  const deferralInfo = decision?.deferral_info;
+  const rawThreshold = deferralInfo?.deferral_threshold_pct;
+  let thresholdPctDisplay: string | null = null;
+  if (rawThreshold != null) {
+    const parsedNum = Number(rawThreshold);
+    if (!isNaN(parsedNum) && parsedNum > 0) {
+      const pct = parsedNum < 1 ? parsedNum * 100 : parsedNum;
+      thresholdPctDisplay = `${pct.toFixed(0)}%`;
+    }
+  }
+
+  const candidateRejections = candidateRankings
+    .map((c: any) => c.rejection_reason)
+    .filter(Boolean);
+  const specificRejection =
+    decision?.fallback_reason ||
+    (candidateRejections.length > 0
+      ? `Constraint violations reported: ${Array.from(new Set(candidateRejections)).slice(0, 2).join("; ")}`
+      : null) ||
+    decision?.rationale;
+
+  const lastCandidate = candidateRankings.length > 0 ? (candidateRankings[candidateRankings.length - 1] as any) : null;
+  const lastScoreRaw = lastCandidate?.composite_score ?? lastCandidate?.cost_score_jr;
+  const lastScoreFormatted = lastScoreRaw != null ? Number(lastScoreRaw).toFixed(2) : "Unavailable";
 
   const getActionStyles = () => {
     switch (action) {
@@ -152,7 +207,14 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
 
   // Pipeline Steps
   const pipelineSteps = [
-    { num: 1, title: "Candidate Selection", subtitle: `${candidateRankings.length || 7} regions evaluated` },
+    {
+      num: 1,
+      title: "Candidate Selection",
+      subtitle:
+        candidateRankings.length > 0
+          ? `${candidateRankings.length} regions evaluated`
+          : "Grid candidate filtering",
+    },
     { num: 2, title: "Normalization", subtitle: "Multi-objective scoring" },
     { num: 3, title: "Constraint Evaluation", subtitle: "Carbon, latency, SLA" },
     { num: 4, title: "Final Decision", subtitle: "Best overall score" },
@@ -162,23 +224,64 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
     <div className="space-y-8 font-sans">
       {/* Raw Data Modal */}
       {showRawData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-3xl max-h-[85vh] rounded-2xl border border-white/[0.1] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-slate-950/90">
-              <div className="flex items-center gap-2 font-mono text-xs text-slate-200">
-                <Code className="w-4 h-4 text-[#22c55e]" />
-                <span className="font-bold">Raw Decision Payload (JSON)</span>
-                <span className="text-slate-500">&bull;</span>
-                <span className="text-slate-400">UUID: {decision.id}</span>
+        <div
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowRawData(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="raw-data-modal-title"
+            className="glass-panel w-full max-w-3xl max-h-[85vh] rounded-2xl border border-white/[0.12] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8),0_0_30px_rgba(34,197,94,0.1)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-white/[0.08] bg-slate-950/90 shrink-0">
+              <div className="flex items-center gap-2 font-mono text-xs text-slate-200 min-w-0">
+                <Code className="w-4 h-4 text-[#22c55e] shrink-0" />
+                <span id="raw-data-modal-title" className="font-bold shrink-0">
+                  Raw Decision Payload (JSON)
+                </span>
+                <span className="text-slate-500 shrink-0">&bull;</span>
+                <span
+                  title={decision?.id ? `UUID: ${decision.id}` : undefined}
+                  className="text-slate-400 truncate text-[11px]"
+                >
+                  <span className="hidden sm:inline">UUID: </span>
+                  {decision?.id}
+                </span>
               </div>
-              <button
-                onClick={() => setShowRawData(false)}
-                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <button
+                  onClick={handleCopyJson}
+                  aria-label="Copy JSON payload"
+                  className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs font-mono flex items-center gap-1.5 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-[#22c55e]" />
+                      <span className="text-[#22c55e]">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy JSON</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowRawData(false)}
+                  aria-label="Close raw decision JSON modal"
+                  className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer border border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div className="p-6 overflow-y-auto font-mono text-xs text-emerald-300 bg-slate-950/90 leading-relaxed">
+            <div className="p-6 overflow-y-auto font-mono text-xs text-emerald-300 bg-slate-950/90 leading-relaxed selection:bg-emerald-500/30 selection:text-white">
               <pre>{JSON.stringify(decision, null, 2)}</pre>
             </div>
           </div>
@@ -319,7 +422,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                     Selected Region
                   </span>
                   <span className="text-xl font-extrabold text-white font-sans">
-                    {selectedRegionCode || "India"}
+                    {selectedRegionCode || (action === "DEFER" ? "Deferred (Waiting Window)" : action === "REJECT" ? "None (Rejected)" : "Unassigned")}
                   </span>
                 </div>
                 <div className="text-right">
@@ -335,7 +438,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Carbon Intensity</span>
                   <span className="text-emerald-300 font-bold">
-                    {carbonIntensity != null ? `${Number(carbonIntensity).toFixed(1)} gCO₂/kWh` : "Verified Grid Live"}
+                    {carbonIntensity != null ? `${Number(carbonIntensity).toFixed(1)} gCO₂/kWh` : "Unavailable"}
                   </span>
                 </div>
 
@@ -346,7 +449,7 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
                       ? `${Number(sel.energy_kwh).toFixed(3)} kWh`
                       : baselineCo2 != null
                       ? `${(Number(baselineCo2) / 1000).toFixed(2)} kWh`
-                      : "Dynamic Integrated"}
+                      : "—"}
                   </span>
                 </div>
 
@@ -394,12 +497,28 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
         {/* Clear Explanation Cards: Immediate vs Deferred */}
         <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3 font-sans">
           <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 mt-0.5">
-              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+              action === "DEFER"
+                ? "bg-amber-500/20 border border-amber-500/40"
+                : action === "REJECT"
+                ? "bg-rose-500/20 border border-rose-500/40"
+                : "bg-emerald-500/20 border border-emerald-500/40"
+            }`}>
+              {action === "DEFER" ? (
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+              ) : action === "REJECT" ? (
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              ) : (
+                <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+              )}
             </div>
             <div className="space-y-1">
               <div className="text-xs font-bold text-slate-100">
-                Decision Summary: Dispatched to Best Candidate ({selectedRegionCode || "Optimal"}) Immediately
+                {action === "DEFER"
+                  ? "Decision Summary: Workload Deferred to Future Low-Carbon Window"
+                  : action === "REJECT"
+                  ? "Decision Summary: Workload Rejected (Constraints Infeasible)"
+                  : `Decision Summary: Dispatched to Best Candidate (${selectedRegionCode || "Optimal"}) Immediately`}
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
                 {rationale}
@@ -407,23 +526,74 @@ export function DecisionExplainer({ decision, loading = false }: DecisionExplain
             </div>
           </div>
 
-          {/* Context Explainer Box: What does this mean? */}
+          {/* Context Explainer Box: Dynamic verdict rationale */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
             <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
               <div className="text-slate-400 font-mono text-[10px] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
-                <Clock className="w-3 h-3 text-cyan-400" /> Why Not Defer to the Future?
+                <Clock className="w-3 h-3 text-cyan-400" />
+                {action === "DEFER"
+                  ? "Deferral Policy Active"
+                  : action === "REJECT"
+                  ? "Rejection Details"
+                  : "Why Not Defer to the Future?"}
               </div>
               <p className="text-slate-300 text-[11px] leading-relaxed">
-                EcoRoute deferral policy requires a verified future grid forecast showing at least a <strong className="text-white">15.0% carbon drop</strong> within the job&apos;s deadline slack window. Because immediate dispatch in <span className="text-emerald-400 font-mono font-bold">{selectedRegionCode || "the winner"}</span> already provides the lowest feasible cost score, holding the workload would introduce unnecessary latency without guaranteed carbon benefits.
+                {action === "DEFER" ? (
+                  deferralInfo?.deferral_reason ? (
+                    `Workload deferred: ${deferralInfo.deferral_reason}`
+                  ) : (
+                    `EcoRoute evaluated forecast carbon curves and deferred dispatch${
+                      thresholdPctDisplay ? ` to capture forecasted lower emissions (>= ${thresholdPctDisplay} threshold)` : ""
+                    } within deadline slack. The workload remains in the WAITING state until optimal conditions arrive.`
+                  )
+                ) : action === "REJECT" ? (
+                  specificRejection ? (
+                    `Workload rejected: ${specificRejection}`
+                  ) : (
+                    "No evaluated candidate region satisfied the required hardware capacity, latency constraints, or deadline slack margin."
+                  )
+                ) : (
+                  deferralInfo?.deferral_reason ? (
+                    `Immediate dispatch selected: ${deferralInfo.deferral_reason}`
+                  ) : (
+                    `Immediate dispatch in ${selectedRegionCode || "the selected region"} was selected${
+                      thresholdPctDisplay
+                        ? ` as forecasted windows did not offer a qualifying >= ${thresholdPctDisplay} emissions reduction within deadline slack.`
+                        : " as immediate execution minimizes total multi-objective penalty."
+                    }`
+                  )
+                )}
               </p>
             </div>
 
             <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
               <div className="text-slate-400 font-mono text-[10px] uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5">
-                <Zap className="w-3 h-3 text-emerald-400" /> Best Candidate vs Expected Range
+                <Zap className="w-3 h-3 text-emerald-400" /> Best Candidate vs Evaluated Range
               </div>
               <p className="text-slate-300 text-[11px] leading-relaxed">
-                Among all {candidateRankings.length} candidate regions evaluated, composite scores ranged from <span className="text-emerald-400 font-mono font-bold">{winningScore} (Rank #1)</span> up to <span className="text-slate-400 font-mono">{candidateRankings.length > 1 ? Number((candidateRankings[candidateRankings.length - 1] as any).composite_score ?? (candidateRankings[candidateRankings.length - 1] as any).cost_score_jr ?? 0.85).toFixed(2) : "0.85"}</span>. Region <span className="text-emerald-400 font-mono font-bold">{selectedRegionCode}</span> minimized total penalty $J_r$.
+                {candidateRankings.length > 0 ? (
+                  <>
+                    Among all {candidateRankings.length} candidate region{candidateRankings.length > 1 ? "s" : ""} evaluated, top-rank composite score is{" "}
+                    <span className="text-emerald-400 font-mono font-bold">{winningScore} (Rank #1)</span>
+                    {candidateRankings.length > 1 && (
+                      <>
+                        {" "}with lowest-ranked evaluated candidate at{" "}
+                        <span className="text-slate-400 font-mono">
+                          {lastScoreFormatted}
+                        </span>
+                      </>
+                    )}
+                    {selectedRegionCode ? (
+                      <>
+                        . Region <span className="text-emerald-400 font-mono font-bold">{selectedRegionCode}</span> minimized total penalty $J_r$.
+                      </>
+                    ) : (
+                      "."
+                    )}
+                  </>
+                ) : (
+                  "Candidate rankings were not populated or constraints precluded ranking comparison."
+                )}
               </p>
             </div>
           </div>

@@ -20,6 +20,10 @@ import { RegionGrid } from "@/components/regions/RegionGrid";
 import { SystemStatusBar } from "@/components/layout/SystemStatusBar";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
 import {
+  StatusNotificationBanner,
+  StatusNotification,
+} from "@/components/ui/StatusNotificationBanner";
+import {
   Layers,
   Globe,
   ArrowRight,
@@ -45,6 +49,24 @@ export default function LandingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRegionCode, setSelectedRegionCode] = useState<string | null>(null);
   const [showDispatchModal, setShowDispatchModal] = useState(false);
+  const [notification, setNotification] = useState<StatusNotification | null>(null);
+
+  // Handle Escape key and body scroll lock for dispatch modal
+  useEffect(() => {
+    if (!showDispatchModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowDispatchModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [showDispatchModal]);
 
   const loadData = async () => {
     try {
@@ -57,12 +79,12 @@ export default function LandingPage() {
         apiClient.getRecentDecisions(5).catch(() => []),
       ]);
 
-      if (h) setHealth(h);
-      if (s) setSummary(s);
+      setHealth(h);
+      setSummary(s);
       if (jRes) setJobs(jRes.items || []);
-      if (r) setRegions(r);
-      if (c) setCarbon(c);
-      if (d) setDecisions(d);
+      setRegions(r || []);
+      setCarbon(c || []);
+      setDecisions(d || []);
     } catch (err) {
       console.error("Failed to load platform data:", err);
     } finally {
@@ -111,19 +133,73 @@ export default function LandingPage() {
   }
 
   const handleCreateJob = async (payload: JobCreatePayload) => {
-    await apiClient.createJob(payload);
-    setShowDispatchModal(false);
-    await loadData();
+    try {
+      await apiClient.createJob(payload);
+      setShowDispatchModal(false);
+      setNotification({
+        type: "success",
+        title: "Workload Submitted",
+        message: `Workload "${payload.workload_name}" was successfully evaluated and queued.`,
+      });
+      await loadData();
+    } catch (err: any) {
+      console.error("Job creation failed:", err);
+      setNotification({
+        type: "error",
+        title: "Submission Error",
+        message: err?.message || "Failed to create workload.",
+      });
+    }
   };
 
   const handleTriggerScheduling = async (jobId: string) => {
-    await apiClient.triggerScheduling(jobId);
-    await loadData();
+    try {
+      const res = await apiClient.triggerScheduling(jobId);
+      if (res.decision_action === "REJECT") {
+        setNotification({
+          type: "warning",
+          title: "Workload Infeasible",
+          message:
+            res.decision_reason ||
+            "Deadline slack is exhausted or no cloud region meets requirements.",
+        });
+      } else {
+        setNotification({
+          type: "success",
+          title: "Evaluation Completed",
+          message: `Decision action: ${res.decision_action || "SCHEDULED"}. Assigned: ${
+            res.selected_region_code || "Selected Region"
+          }`,
+        });
+      }
+      await loadData();
+    } catch (err: any) {
+      console.error("Scheduling evaluation failed:", err);
+      setNotification({
+        type: "error",
+        title: "Evaluation Error",
+        message: err?.message || "Scheduling evaluation failed.",
+      });
+    }
   };
 
   const handleCancelJob = async (jobId: string) => {
-    await apiClient.cancelJob(jobId);
-    await loadData();
+    try {
+      await apiClient.cancelJob(jobId);
+      setNotification({
+        type: "info",
+        title: "Workload Cancelled",
+        message: `Workload ID ${jobId.substring(0, 8)}... was successfully marked as cancelled.`,
+      });
+      await loadData();
+    } catch (err: any) {
+      console.error("Job cancellation failed:", err);
+      setNotification({
+        type: "error",
+        title: "Cancellation Failed",
+        message: err?.message || "Workload could not be cancelled.",
+      });
+    }
   };
 
   // Derive active routing from recent decision
@@ -136,20 +212,38 @@ export default function LandingPage() {
       }
     : null;
 
-  // Realized savings or standard policy baseline
+  // Realized savings or truthful placeholder
   const savingsPct = summary?.carbon_savings_pct_vs_baseline;
-  const displaySavings =
-    savingsPct != null && Number(savingsPct) > 0
-      ? `${Number(savingsPct).toFixed(0)}%`
-      : "32%";
+  let displaySavings: string;
+  let savingsSubtext: string;
+  if (loading) {
+    displaySavings = "--";
+    savingsSubtext = "Loading metrics...";
+  } else if (savingsPct != null && Number(savingsPct) > 0) {
+    displaySavings = `${Number(savingsPct).toFixed(0)}%`;
+    savingsSubtext = "Lower Emissions";
+  } else if (savingsPct != null && Number(savingsPct) === 0) {
+    displaySavings = "0%";
+    savingsSubtext = "No Emissions Reduction";
+  } else {
+    displaySavings = "--";
+    savingsSubtext = "No Baseline Telemetry";
+  }
 
   return (
     <div className="space-y-12">
       {/* System Status Telemetry HUD Bar */}
       <SystemStatusBar
         health={health}
-        regionCount={regions.length || 7}
+        loading={loading}
+        regionCount={regions.length}
         activeWorkloadsCount={summary?.running_jobs || 0}
+      />
+
+      {/* Non-blocking Accessible Notification Banner */}
+      <StatusNotificationBanner
+        notification={notification}
+        onDismiss={() => setNotification(null)}
       />
 
       {/* HERO SECTION — FULL 3D SPACE GLOBE ENVIRONMENT */}
@@ -203,10 +297,14 @@ export default function LandingPage() {
             <div className="grid grid-cols-3 gap-6 pt-6 border-t border-white/[0.08]">
               <div>
                 <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                  {regions.length > 0 ? regions.length : 25}
+                  {loading ? "--" : regions.length}
                 </div>
                 <div className="text-xs text-slate-400 font-sans mt-0.5">
-                  Global Regions
+                  {loading
+                    ? "Loading Regions..."
+                    : regions.length === 1
+                    ? "Global Region"
+                    : "Global Regions"}
                 </div>
               </div>
 
@@ -215,18 +313,31 @@ export default function LandingPage() {
                   {displaySavings}
                 </div>
                 <div className="text-xs text-slate-400 font-sans mt-0.5">
-                  Lower Emissions
+                  {savingsSubtext}
                 </div>
               </div>
 
               <div>
                 <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                  {summary?.completed_jobs && summary?.total_jobs && summary.total_jobs > 0
-                    ? `${Math.min(100, (summary.completed_jobs / summary.total_jobs) * 100).toFixed(1)}%`
-                    : "99.9%"}
+                  {loading
+                    ? "--"
+                    : summary?.total_jobs != null && summary.total_jobs > 0
+                    ? `${Math.min(
+                        100,
+                        ((summary.completed_jobs ?? 0) / summary.total_jobs) * 100
+                      ).toFixed(1)}%`
+                    : summary?.total_jobs === 0
+                    ? "100%"
+                    : "--"}
                 </div>
                 <div className="text-xs text-slate-400 font-sans mt-0.5">
-                  Dispatch Reliability
+                  {loading
+                    ? "Checking Telemetry..."
+                    : summary?.total_jobs != null && summary.total_jobs > 0
+                    ? "Dispatch Reliability"
+                    : summary?.total_jobs === 0
+                    ? "0 Dispatches Logged"
+                    : "Reliability Telemetry"}
                 </div>
               </div>
             </div>
@@ -237,17 +348,52 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Workload Intake Drawer Modal */}
+      {/* Workload Intake Modal Dialog */}
       {showDispatchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
-          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setShowDispatchModal(false)}
-              className="absolute top-4 right-4 z-10 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white border border-slate-700 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <WorkloadForm onSubmit={handleCreateJob} loading={refreshing} />
+        <div
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowDispatchModal(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="intake-modal-title"
+            className="glass-panel relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/[0.12] bg-[#070b14]/95 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8),0_0_30px_rgba(34,197,94,0.1)] animate-in zoom-in-95 duration-200 flex flex-col"
+          >
+            {/* Modal Accessible Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-slate-950/90 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-[#22c55e]">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 id="intake-modal-title" className="text-base font-bold text-white font-sans">
+                    Autonomous Workload Dispatcher
+                  </h2>
+                  <p className="text-xs text-slate-400 font-mono">
+                    Configure parameters for carbon-aware spatial routing
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowDispatchModal(false)}
+                aria-label="Close workload intake modal"
+                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer border border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto">
+              <WorkloadForm onSubmit={handleCreateJob} loading={refreshing} />
+            </div>
           </div>
         </div>
       )}

@@ -6,7 +6,11 @@ import { JobCreatePayload, JobResponse } from "@/lib/types";
 import { WorkloadForm } from "@/components/jobs/WorkloadForm";
 import { JobLifecycleTable } from "@/components/jobs/JobLifecycleTable";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
-import { Layers, Filter, RefreshCw, Database, Server } from "lucide-react";
+import { Filter, RefreshCw } from "lucide-react";
+import {
+  StatusNotificationBanner,
+  StatusNotification,
+} from "@/components/ui/StatusNotificationBanner";
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobResponse[]>([]);
@@ -14,6 +18,7 @@ export default function JobsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [refreshing, setRefreshing] = useState(false);
   const [health, setHealth] = useState<any>(null);
+  const [notification, setNotification] = useState<StatusNotification | null>(null);
 
   const fetchJobs = async () => {
     try {
@@ -44,10 +49,19 @@ export default function JobsPage() {
 
   const handleCreateJob = async (payload: JobCreatePayload) => {
     try {
-      await apiClient.createJob(payload);
+      const res = await apiClient.createJob(payload);
+      setNotification({
+        type: "success",
+        title: "Workload Submitted",
+        message: `Workload "${payload.workload_name}" was successfully evaluated and queued.`,
+      });
     } catch (err: any) {
       console.error("Job creation failed:", err);
-      alert(err.message || "Failed to create job.");
+      setNotification({
+        type: "error",
+        title: "Submission Error",
+        message: err.message || "Failed to create workload.",
+      });
     } finally {
       await fetchJobs();
     }
@@ -57,11 +71,29 @@ export default function JobsPage() {
     try {
       const res = await apiClient.triggerScheduling(jobId);
       if (res.decision_action === "REJECT") {
-        alert(`Workload Infeasible: ${res.decision_reason || "Deadline slack is exhausted."}`);
+        setNotification({
+          type: "warning",
+          title: "Workload Infeasible",
+          message:
+            res.decision_reason ||
+            "Deadline slack is exhausted or no cloud region meets requirements.",
+        });
+      } else {
+        setNotification({
+          type: "success",
+          title: "Evaluation Completed",
+          message: `Decision action: ${res.decision_action || "SCHEDULED"}. Assigned: ${
+            res.selected_region_code || "Selected Region"
+          }`,
+        });
       }
     } catch (err: any) {
       console.error("Scheduling evaluation failed:", err);
-      alert(err.message || "Scheduling evaluation failed.");
+      setNotification({
+        type: "error",
+        title: "Evaluation Error",
+        message: err.message || "Scheduling evaluation failed.",
+      });
     } finally {
       await fetchJobs();
     }
@@ -70,8 +102,18 @@ export default function JobsPage() {
   const handleCancelJob = async (jobId: string) => {
     try {
       await apiClient.cancelJob(jobId);
+      setNotification({
+        type: "info",
+        title: "Workload Cancelled",
+        message: `Workload ID ${jobId.substring(0, 8)}... was successfully marked as cancelled.`,
+      });
     } catch (err: any) {
       console.error("Job cancellation failed:", err);
+      setNotification({
+        type: "error",
+        title: "Cancellation Failed",
+        message: err.message || "Workload could not be cancelled.",
+      });
     } finally {
       await fetchJobs();
     }
@@ -79,7 +121,7 @@ export default function JobsPage() {
 
   const statuses = [
     { label: "All Workloads", value: "ALL" },
-    { label: "Pending", value: "PENDING" },
+    { label: "Queued", value: "PENDING" },
     { label: "Running", value: "RUNNING" },
     { label: "Deferred", value: "WAITING" },
     { label: "Scheduled", value: "SCHEDULED" },
@@ -87,20 +129,67 @@ export default function JobsPage() {
     { label: "Failed", value: "FAILED" },
   ];
 
-  const dbStatus = health?.components?.database?.status || "connected";
-  const redisStatus = health?.components?.redis?.status || "connected";
+  // Derive counts from current jobs for live tab visibility
+  const statusCounts: Record<string, number> = {
+    ALL: jobs.length,
+    PENDING: jobs.filter((j) => j.status === "PENDING").length,
+    RUNNING: jobs.filter((j) => j.status === "RUNNING").length,
+    WAITING: jobs.filter((j) => j.status === "WAITING").length,
+    SCHEDULED: jobs.filter((j) => j.status === "SCHEDULED").length,
+    COMPLETED: jobs.filter((j) => j.status === "COMPLETED").length,
+    FAILED: jobs.filter((j) => j.status === "FAILED").length,
+  };
+
+  const rawDbStatus = health?.components?.database?.status;
+  const dbStatus = !health
+    ? loading
+      ? "checking..."
+      : "unreachable"
+    : rawDbStatus || "unknown";
+
+  const rawRedisStatus = health?.components?.redis?.status;
+  const isRedisConnected = rawRedisStatus === "connected";
+  const isRedisFallback = rawRedisStatus === "unconfigured" || rawRedisStatus === "in-memory fallback";
+  const isRedisChecking = !health && loading;
+  const isRedisUnreachable = !health && !loading;
+
+  const queueLabel = isRedisConnected
+    ? "redis"
+    : isRedisFallback
+    ? "in-memory fallback"
+    : isRedisChecking
+    ? "checking..."
+    : isRedisUnreachable
+    ? "unreachable"
+    : rawRedisStatus === "unavailable"
+    ? "unavailable"
+    : rawRedisStatus || "unknown";
+
+  const queueBadgeClass = isRedisConnected
+    ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
+    : isRedisFallback
+    ? "bg-amber-950/60 text-amber-400 border-amber-800/60"
+    : isRedisChecking
+    ? "bg-slate-900/60 text-slate-400 border-slate-700"
+    : "bg-red-950/60 text-red-400 border-red-800/60";
 
   if (loading) {
     return (
       <LoadingScreen
         message="Loading Workload Telemetry..."
-        submessage="Connecting to distributed execution queue and PostgreSQL durable state"
+        submessage="Connecting to execution queue and database persistence"
       />
     );
   }
 
   return (
     <div className="space-y-8 font-sans">
+      {/* Non-blocking Accessible Notification Banner */}
+      <StatusNotificationBanner
+        notification={notification}
+        onDismiss={() => setNotification(null)}
+      />
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/[0.06]">
         <div>
@@ -114,8 +203,8 @@ export default function JobsPage() {
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
             Workload <span className="text-[#22c55e]">Command Center</span>
           </h1>
-          <p className="text-sm text-slate-300 mt-1.5 max-w-2xl">
-            Submit compute demands, configure multi-objective optimization weights ($J_r$), and manage execution lifecycles.
+          <p className="text-sm text-slate-300 mt-1.5 max-w-2xl leading-relaxed">
+            Submit compute demands, inspect real-time execution states, and track multi-objective optimization across cloud regions.
           </p>
         </div>
 
@@ -125,19 +214,17 @@ export default function JobsPage() {
               className={`px-3 py-1 rounded-xl border ${
                 dbStatus === "connected"
                   ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
+                  : dbStatus === "checking..."
+                  ? "bg-slate-900/60 text-slate-400 border-slate-700"
                   : "bg-red-950/60 text-red-400 border-red-800/60"
               }`}
             >
               DB: {dbStatus}
             </span>
             <span
-              className={`px-3 py-1 rounded-xl border ${
-                redisStatus === "connected"
-                  ? "bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30"
-                  : "bg-amber-950/60 text-amber-400 border-amber-800/60"
-              }`}
+              className={`px-3 py-1 rounded-xl border ${queueBadgeClass}`}
             >
-              Queue: {redisStatus === "connected" ? "redis" : "in-memory"}
+              Queue: {queueLabel}
             </span>
           </div>
 
@@ -147,7 +234,7 @@ export default function JobsPage() {
               fetchJobs();
             }}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-mono font-semibold border border-slate-700/80 transition cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-mono font-semibold border border-slate-700/80 transition cursor-pointer shadow-sm"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
@@ -155,27 +242,48 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Intake Form & What Happens Next Flow */}
+      {/* Intake Form & Lifecycle Pipeline Visualizer */}
       <WorkloadForm onSubmit={handleCreateJob} loading={refreshing} />
 
-      {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-white/[0.06]">
-        <span className="text-xs text-slate-400 flex items-center gap-1.5 mr-1 font-mono font-semibold">
-          <Filter className="w-3.5 h-3.5 text-[#22c55e]" /> Filter:
-        </span>
-        {statuses.map((s) => (
-          <button
-            key={s.value}
-            onClick={() => setFilterStatus(s.value)}
-            className={`text-xs px-3.5 py-1.5 rounded-xl font-mono font-medium transition cursor-pointer ${
-              filterStatus === s.value
-                ? "bg-[#22c55e] text-slate-950 font-bold shadow-md shadow-emerald-950/40"
-                : "bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+      {/* Filter Tabs with Live Status Counts for Queue Visibility */}
+      <div className="space-y-2 pt-2">
+        <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
+          <span className="flex items-center gap-1.5 font-semibold text-slate-300">
+            <Filter className="w-3.5 h-3.5 text-[#22c55e]" /> Workload Queue Filter:
+          </span>
+          <span className="text-[11px] text-slate-500">
+            Showing {filterStatus === "ALL" ? "all" : filterStatus.toLowerCase()} records
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
+          {statuses.map((s) => {
+            const isSelected = filterStatus === s.value;
+            const count = statusCounts[s.value] ?? 0;
+            return (
+              <button
+                key={s.value}
+                onClick={() => setFilterStatus(s.value)}
+                className={`text-xs px-3.5 py-1.5 rounded-xl font-mono font-medium transition cursor-pointer shrink-0 flex items-center gap-2 ${
+                  isSelected
+                    ? "bg-[#22c55e] text-slate-950 font-bold shadow-md shadow-emerald-950/40"
+                    : "bg-slate-900/80 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700"
+                }`}
+              >
+                <span>{s.label}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    isSelected
+                      ? "bg-slate-950/30 text-slate-950"
+                      : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Lifecycle Table */}

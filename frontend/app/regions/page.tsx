@@ -96,8 +96,11 @@ export default function RegionsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Region Cards List with Mini Sparklines (3 cols) */}
         <div className="lg:col-span-3 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-          <div className="text-[11px] font-mono uppercase text-slate-400 tracking-wider font-semibold mb-2">
-            Compute Regions ({regions.length})
+          <div className="flex items-center justify-between text-[11px] font-mono uppercase text-slate-400 tracking-wider font-semibold mb-2 px-0.5">
+            <span>Compute Regions ({regions.length})</span>
+            <span className="text-[10px] text-slate-400 font-normal lowercase tracking-normal" title="Mini sparklines represent illustrative modeled projections, not measured historical telemetry">
+              (modeled trends)
+            </span>
           </div>
 
           {regions.map((r: any, idx: number) => {
@@ -116,13 +119,10 @@ export default function RegionsPage() {
             const lat = Number(r.latitude) || 0;
             const lng = Number(r.longitude) || 0;
             const util = Number(r.current_utilization) || 0.3;
-            const cVal = ci != null ? ci : 50 + (Math.abs(Math.sin(lat + lng)) * 120);
-
-            const y1 = Math.round(20 - util * 12);
-            const y2 = Math.round(4 + ((cVal % 100) / 100) * 14);
-            const y3 = Math.round(18 - Math.abs(Math.sin(lat)) * 12);
-            const y4 = Math.round(6 + Math.abs(Math.cos(lng)) * 14);
-            const sparklinePath = `M 0,${y1} Q 15,${y2} 30,${y3} T 60,${y4}`;
+            const hasCarbon = ci != null;
+            const sparklinePath = hasCarbon
+              ? `M 0,${Math.round(20 - util * 12)} Q 15,${Math.round(4 + ((ci % 100) / 100) * 14)} 30,${Math.round(18 - Math.abs(Math.sin(lat)) * 12)} T 60,${Math.round(6 + Math.abs(Math.cos(lng)) * 14)}`
+              : "M 0,13 L 60,13";
 
             return (
               <div
@@ -140,20 +140,26 @@ export default function RegionsPage() {
                     {r.code}
                   </div>
                   <div className="text-[11px] font-bold mt-0.5" style={{ color: sparklineColor }}>
-                    {ci != null ? `${ci.toFixed(0)} gCO₂/kWh` : "Unverified"}
+                    {ci != null ? `${ci.toFixed(0)} gCO₂/kWh` : "No Live Feed"}
                   </div>
                 </div>
 
-                {/* Dynamic SVG Sparkline */}
-                <div className="w-16 h-7">
-                  <svg className="w-full h-full" viewBox="0 0 60 25">
-                    <path
-                      d={sparklinePath}
-                      fill="none"
-                      stroke={sparklineColor}
-                      strokeWidth="1.8"
-                    />
-                  </svg>
+                {/* Illustrative Modeled Sparkline */}
+                <div className="flex flex-col items-end shrink-0" title="Illustrative modeled trend projection (not measured historical telemetry)">
+                  <div className="w-16 h-6">
+                    <svg className="w-full h-full" viewBox="0 0 60 25" aria-label="Illustrative modeled trend projection">
+                      <path
+                        d={sparklinePath}
+                        fill="none"
+                        stroke={sparklineColor}
+                        strokeWidth="1.8"
+                        strokeDasharray={hasCarbon ? undefined : "3 3"}
+                      />
+                    </svg>
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-400 tracking-tight">
+                    {hasCarbon ? "modeled" : "offline"}
+                  </span>
                 </div>
               </div>
             );
